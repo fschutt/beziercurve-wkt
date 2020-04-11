@@ -1,0 +1,12 @@
+[package]
+name = "beziercurve-wkt"
+version = "0.1.0"
+authors = ["Felix Schütt <felix.schuett@maps4print.com>"]
+edition = "2018"
+repository = "https://github.com/fschutt/beziercurve-wkt"
+homepage = "https://github.com/fschutt/beziercurve-wkt"
+license = "MIT"
+readme = "README.md"
+description = "Serialize / deserialize bezier curves to / from a string"
+
+[dependencies]
