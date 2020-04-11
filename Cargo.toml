@@ -10,3 +10,4 @@ readme = "README.md"
 description = "Serialize / deserialize bezier curves to / from a string"
 
 [dependencies]
+quadtree-f32 = "0.1.0"

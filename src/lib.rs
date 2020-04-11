@@ -45,6 +45,8 @@ use std::fmt;
 use std::num::ParseFloatError;
 use std::str::FromStr;
 
+extern crate quadtree_f32;
+
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
 pub struct Point { pub x: f32, pub y: f32 }
 
