@@ -53,6 +53,7 @@ use quadtree_f32::Rect;
 mod intersection;
 
 pub use intersection::IntersectionResult;
+pub use intersection::BezierNormalVector;
 
 pub type Line           = (Point, Point);
 pub type QuadraticCurve = (Point, Point, Point);
@@ -271,6 +272,27 @@ impl BezierCurveItem {
 
             (CubicCurve(c1), Line(l1))               => curve_line_intersect(*c1, *l1),
             (CubicCurve(c1), QuadraticCurve(q1))     => curve_curve_intersect(*c1, quadratic_to_cubic_curve(*q1)),
+        }
+    }
+
+    /// Returns the normal of the curve / line at t
+    pub fn normal(&self, t: f32) -> BezierNormalVector {
+        use self::BezierCurveItem::*;
+        use crate::intersection::*;
+        match self {
+            Line(l) => {
+                // calculate the rise / run, then simply
+                // inverse the axis to rotate by 90 degrees
+                let diff_x = l.1.x - l.0.x;
+                let diff_y = l.1.y - l.0.y;
+                let line_length = (diff_x.powi(2) + diff_y.powi(2)).sqrt();
+                BezierNormalVector {
+                    x: -diff_y / line_length,
+                    y: diff_x / line_length,
+                }
+            },
+            QuadraticCurve(q) => cubic_bezier_normal(quadratic_to_cubic_curve(*q), t),
+            CubicCurve(c) => cubic_bezier_normal(*c, t),
         }
     }
 }

@@ -92,6 +92,9 @@ fn lerp(p1: Point, p2: Point, t: f32) -> Point {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
+pub struct BezierNormalVector { pub x: f32, pub y: f32 }
+
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
 pub struct LineLineIntersection {
     pub t1: f32,
     pub line1: Line,
@@ -142,6 +145,71 @@ pub fn curve_curve_intersect(a: CubicCurve, b: CubicCurve) -> IntersectionResult
     } else {
         IntersectionResult::CubicCubic(intersections)
     }
+}
+
+/// Calculates the normal vector at a certain point (perpendicular to the curve)
+pub fn cubic_bezier_normal(curve: CubicCurve, t: f32) -> BezierNormalVector {
+
+    // 1. Calculate the derivative of the bezier curve
+    //
+    // This means, we go from 4 control points to 3 control points and redistribute
+    // the weights of the control points according to the formula:
+    //
+    // w'0 = 3(w1-w0)
+    // w'1 = 3(w2-w1)
+    // w'2 = 3(w3-w2)
+
+    let weight_1_x = 3.0 * (curve.1.x - curve.0.x);
+    let weight_1_y = 3.0 * (curve.1.y - curve.0.y);
+
+    let weight_2_x = 3.0 * (curve.2.x - curve.1.x);
+    let weight_2_y = 3.0 * (curve.2.y - curve.1.y);
+
+    let weight_3_x = 3.0 * (curve.3.x - curve.2.x);
+    let weight_3_y = 3.0 * (curve.3.y - curve.2.y);
+
+    // The first derivative of a cubic bezier curve is a quadratic bezier curve
+    // Luckily, the first derivative is also the tangent vector. So all we need to do
+    // is to get the quadratic bezier
+    let mut tangent = quadratic_interpolate_bezier((
+        Point { x: weight_1_x, y: weight_1_y },
+        Point { x: weight_2_x, y: weight_2_y },
+        Point { x: weight_3_x, y: weight_3_y },
+    ), t);
+
+    // We normalize the tangent to have a lenght of 1
+    let tangent_length = (tangent.x.powi(2) + tangent.y.powi(2)).sqrt();
+    tangent.x /= tangent_length;
+    tangent.y /= tangent_length;
+
+    // The tangent is the vector that runs "along" the curve at a specific point.
+    // To get the normal (to calcuate the rotation of the characters), we need to
+    // rotate the tangent vector by 90 degrees.
+    //
+    // Rotating by 90 degrees is very simple, as we only need to flip the x and y axis
+
+    BezierNormalVector {
+        x: -tangent.y,
+        y: tangent.x,
+    }
+}
+
+#[inline]
+fn quadratic_interpolate_bezier(curve: QuadraticCurve, t: f32) -> Point {
+    let one_minus = 1.0 - t;
+    let one_minus_square = one_minus.powi(2);
+
+    let t_pow2 = t.powi(2);
+
+    let x =         one_minus_square *             curve.0.x
+            + 2.0 * one_minus        * t         * curve.1.x
+            + 3.0                    * t_pow2    * curve.2.x;
+
+    let y =         one_minus_square *             curve.0.y
+            + 2.0 * one_minus        * t         * curve.1.y
+            + 3.0                    * t_pow2    * curve.2.y;
+
+    Point { x, y }
 }
 
 /// Intersect a cubic curve with a line.
