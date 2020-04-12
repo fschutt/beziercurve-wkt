@@ -41,13 +41,22 @@
 //!
 //! MIT
 
-use std::fmt;
-use std::num::ParseFloatError;
-use std::str::FromStr;
-
 extern crate quadtree_f32;
 
-pub mod intersection;
+use std::{
+    fmt,
+    num::ParseFloatError,
+    str::FromStr,
+};
+use quadtree_f32::Rect;
+
+mod intersection;
+
+pub use intersection::IntersectionResult;
+
+pub type Line           = (Point, Point);
+pub type QuadraticCurve = (Point, Point, Point);
+pub type CubicCurve     = (Point, Point, Point, Point);
 
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
 pub struct Point { pub x: f32, pub y: f32 }
@@ -81,7 +90,7 @@ impl Point {
         let y = number_iterator.next();
 
         match (x, y) {
-            (Some(x), Some(y)) => Ok(Point { x: f32::from_str(x)?, y: f32::from_str(y)? }),
+            (Some(x), Some(y)) => Ok(Point::new(f32::from_str(x)?, f32::from_str(y)?)),
             _ => Err(ParseError::FailedToParsePoint(s.to_string())),
         }
     }
@@ -117,18 +126,18 @@ impl Bbox {
 
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
 pub enum BezierCurveItem {
-    Line(Point, Point),
-    QuadraticCurve(Point,Point, Point),
-    CubicCurve(Point, Point, Point, Point),
+    Line(Line),
+    QuadraticCurve(QuadraticCurve),
+    CubicCurve(CubicCurve),
 }
 
 impl fmt::Display for BezierCurveItem {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::BezierCurveItem::*;
         match self {
-            Line(p_start, p_end) => write!(f, "({}, {})", p_start, p_end),
-            QuadraticCurve(p_start, control_1, p_end) => write!(f, "({}, {}, {})", p_start, control_1, p_end),
-            CubicCurve(p_start, control_1, control_2, p_end) => write!(f, "({}, {}, {}, {})", p_start, control_1, control_2, p_end),
+            Line((p_start, p_end)) => write!(f, "({}, {})", p_start, p_end),
+            QuadraticCurve((p_start, control_1, p_end)) => write!(f, "({}, {}, {})", p_start, control_1, p_end),
+            CubicCurve((p_start, control_1, control_2, p_end)) => write!(f, "({}, {}, {}, {})", p_start, control_1, control_2, p_end),
         }
     }
 }
@@ -144,13 +153,13 @@ macro_rules! get_max_fn {
         pub fn $fn_name(&self) -> f32 {
             use self::BezierCurveItem::*;
             match self {
-                Line(p_start, p_end) => {
+                Line((p_start, p_end)) => {
                     p_start.$field.$max(p_end.$field)
                 },
-                QuadraticCurve(p_start, control_1, p_end) => {
+                QuadraticCurve((p_start, control_1, p_end)) => {
                     p_start.$field.$max(p_end.$field).$max(control_1.$field)
                 },
-                CubicCurve(p_start, control_1, control_2, p_end) => {
+                CubicCurve((p_start, control_1, control_2, p_end)) => {
                     p_start.$field.$max(p_end.$field).$max(control_1.$field).$max(control_2.$field)
                 },
             }
@@ -160,13 +169,13 @@ macro_rules! get_max_fn {
 
 impl BezierCurveItem {
 
-    /// Returns to
+    /// Returns the start point of the curve
     pub fn get_first_point(&self) -> Point {
         use self::BezierCurveItem::*;
         match self {
-            Line(p_start, _) => *p_start,
-            QuadraticCurve(p_start, _, _) => *p_start,
-            CubicCurve(p_start, _, _, _) => *p_start,
+            Line((p_start, _)) => *p_start,
+            QuadraticCurve((p_start, _, _)) => *p_start,
+            CubicCurve((p_start, _, _, _)) => *p_start,
         }
     }
 
@@ -174,9 +183,9 @@ impl BezierCurveItem {
     pub fn get_last_point(&self) -> Point {
         use self::BezierCurveItem::*;
         match self {
-            Line(p_start, _) => *p_start,
-            QuadraticCurve(p_start, _, _) => *p_start,
-            CubicCurve(p_start, _, _, _) => *p_start,
+            Line((p_start, _)) => *p_start,
+            QuadraticCurve((p_start, _, _)) => *p_start,
+            CubicCurve((p_start, _, _, _)) => *p_start,
         }
     }
 
@@ -186,7 +195,7 @@ impl BezierCurveItem {
     /// let s1 = "(0.0 1.0, 2.0 1.0)";
     /// let parsed = BezierCurveItem::from_str(s1).unwrap();
     ///
-    /// assert_eq!(parsed, BezierCurveItem::Line(Point { x: 0.0, y: 1.0 }, Point { x: 2.0, y: 1.0 }));
+    /// assert_eq!(parsed, BezierCurveItem::Line((Point { x:) 0.0, y: 1.0 }, Point { x: 2.0, y: 1.0 }));
     /// ```
     pub fn from_str(s: &str) -> Result<Self, ParseError> {
         use self::BezierCurveItem::*;
@@ -212,10 +221,10 @@ impl BezierCurveItem {
         }
 
         match (a,b,c,d) {
-            (Some(a), Some(b), None, None) => Ok(Line(Point::from_str(a)?, Point::from_str(b)?)),
-            (Some(a), Some(b), Some(c), None) => Ok(QuadraticCurve(Point::from_str(a)?, Point::from_str(b)?, Point::from_str(c)?)),
-            (Some(a), Some(b), Some(c), Some(d)) => Ok(CubicCurve(Point::from_str(a)?, Point::from_str(b)?, Point::from_str(c)?, Point::from_str(d)?)),
-            _ => Err(ParseError::TooFewPoints)
+            (Some(a), Some(b), None, None)          => Ok(Line((Point::from_str(a)?, Point::from_str(b)?))),
+            (Some(a), Some(b), Some(c), None)       => Ok(QuadraticCurve((Point::from_str(a)?, Point::from_str(b)?, Point::from_str(c)?))),
+            (Some(a), Some(b), Some(c), Some(d))    => Ok(CubicCurve((Point::from_str(a)?, Point::from_str(b)?, Point::from_str(c)?, Point::from_str(d)?))),
+            _                                       => Err(ParseError::TooFewPoints),
         }
     }
 
@@ -232,6 +241,46 @@ impl BezierCurveItem {
            min_x: self.get_min_x(),
            min_y: self.get_min_y(),
         }
+    }
+
+    /// Returns the intersection of two items (line-curve, curve-curve or line-line intersection).
+    ///
+    /// Warning: calling this function is expensive, it's recommended to cull
+    /// items that don't intersect first by intersecting their bounding boxes.
+    pub fn intersect(&self, curve: &Self) -> IntersectionResult {
+        use self::BezierCurveItem::*;
+        use crate::intersection::*;
+
+        // Preliminary test if the bounding boxes overlap
+        let self_bbox = translate_bbox(self.get_bbox());
+        let curve_bbox = translate_bbox(curve.get_bbox());
+        if !self_bbox.overlaps_rect(&curve_bbox) {
+            return IntersectionResult::NoIntersection;
+        }
+
+        match (self, curve) {
+            (Line(l1), Line(l2))                     => line_line_intersect(*l1, *l2),
+            (QuadraticCurve(q1), QuadraticCurve(q2)) => curve_curve_intersect(quadratic_to_cubic_curve(*q1), quadratic_to_cubic_curve(*q2)),
+            (CubicCurve(c1), CubicCurve(c2))         => curve_curve_intersect(*c1, *c2),
+
+            (Line(l1), QuadraticCurve(q1))           => curve_line_intersect(quadratic_to_cubic_curve(*q1), *l1),
+            (Line(l1), CubicCurve(c1))               => curve_line_intersect(*c1, *l1),
+
+            (QuadraticCurve(q1), Line(l1))           => curve_line_intersect(quadratic_to_cubic_curve(*q1), *l1),
+            (QuadraticCurve(q1), CubicCurve(c1))     => curve_curve_intersect(quadratic_to_cubic_curve(*q1), *c1),
+
+            (CubicCurve(c1), Line(l1))               => curve_line_intersect(*c1, *l1),
+            (CubicCurve(c1), QuadraticCurve(q1))     => curve_curve_intersect(*c1, quadratic_to_cubic_curve(*q1)),
+        }
+    }
+}
+
+const fn translate_bbox(bbox: Bbox) -> Rect {
+    Rect {
+       max_x: bbox.max_x,
+       max_y: bbox.max_y,
+       min_x: bbox.min_x,
+       min_y: bbox.min_y,
     }
 }
 
@@ -286,9 +335,9 @@ impl BezierCurve {
     /// let parsed_curve = BezierCurve::from_str(s).unwrap();
     ///
     /// assert_eq!(parsed_curve, BezierCurve { items: vec![
-    ///      BezierCurveItem::Line(Point { x: 0.0, y: 1.0 }, Point { x: 2.0, y: 1.0 }),
-    ///      BezierCurveItem::Line(Point { x: 2.0, y: 1.0 }, Point { x: 0.0, y: 0.0 }),
-    ///      BezierCurveItem::Line(Point { x: 0.0, y: 0.0 }, Point { x: 2.0, y: 1.0 }),
+    ///      BezierCurveItem::Line((Point { x: 0.0, y: 1.0 }, Point { x: 2.0, y: 1.0 }),
+    ///      BezierCurveItem::Line((Point { x: 2.0, y: 1.0 }, Point { x: 0.0, y: 0.0 }),
+    ///      BezierCurveItem::Line((Point { x: 0.0, y: 0.0 }, Point { x: 2.0, y: 1.0 }),
     /// ]});
     ///
     /// assert!(parsed_curve.is_closed());
@@ -384,10 +433,3 @@ fn skip_next_braces(input: &str, target_char: char) -> Option<(usize, bool)> {
     }
 }
 
-fn intersect_bezier_curve() {
-
-}
-
-fn construct_bezier_curve_quadtree() {
-
-}

@@ -1,10 +1,6 @@
 //! Module for calculating curve-curve
 
-use crate::Point;
-
-pub type Line           = (Point, Point);
-pub type QuadraticCurve = (Point, Point, Point);
-pub type CubicCurve     = (Point, Point, Point, Point);
+use crate::{Point, Line, QuadraticCurve, CubicCurve};
 
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
 pub struct CubicCubicIntersection {
@@ -53,7 +49,7 @@ pub enum IntersectionResult {
 }
 
 // Intersect a quadratic with another quadratic curve
-pub fn cubic_cubic_intersect(a: CubicCurve, b: CubicCurve) -> IntersectionResult {
+pub fn curve_curve_intersect(a: CubicCurve, b: CubicCurve) -> IntersectionResult {
     use self::IntersectionResult::*;
 
     if a == b {
@@ -71,7 +67,7 @@ pub fn cubic_cubic_intersect(a: CubicCurve, b: CubicCurve) -> IntersectionResult
 
 // Intersect a quadratic curve with a line
 #[allow(unused_variables)]
-pub fn cubic_line_intersect(
+pub fn curve_line_intersect(
     (a1, a2, a3, a4): CubicCurve,
     (b1, b2): Line,
 ) -> IntersectionResult {
@@ -136,9 +132,7 @@ pub fn cubic_line_intersect(
         console.log(t[0]+" "+t[1]+" "+t[2]);
         return t;
     }
-    */
 
-    /*
     //computes intersection between a cubic spline and a line segment
     function computeIntersections(px,py,lx,ly)
     {
@@ -198,7 +192,10 @@ pub fn cubic_line_intersect(
 //  Returns NO if there is no determinable intersection point, in which case X,Y will
 //  be unmodified.
 #[inline]
+#[allow(unused_variables)]
 pub fn line_line_intersect(
+    l1: Line,
+    l2: Line,
 ) -> IntersectionResult {
 
     return IntersectionResult::NoIntersection; // TODO
@@ -241,8 +238,8 @@ pub fn line_line_intersect(
 
 // Convert a quadratic bezier into a cubic bezier
 #[inline]
-fn quad_into_cubic_bezier(c: QuadraticCurve) -> CubicCurve {
-    const TWO_THIRDS f32 = 2.0 / 3.0;
+pub fn quadratic_to_cubic_curve(c: QuadraticCurve) -> CubicCurve {
+    const TWO_THIRDS: f32 = 2.0 / 3.0;
 
     let c1_x = c.0.x + TWO_THIRDS * (c.1.x - c.0.x);
     let c1_y = c.0.y + TWO_THIRDS * (c.1.y - c.0.y);
@@ -250,7 +247,7 @@ fn quad_into_cubic_bezier(c: QuadraticCurve) -> CubicCurve {
     let c2_x = c.2.x + TWO_THIRDS * (c.1.x - c.2.x);
     let c2_y = c.2.y + TWO_THIRDS * (c.1.y - c.2.y);
 
-    (c.0, Point::new(c1_x, c1_y), Point::new(c2_x, c2_y), c.3)
+    (c.0, Point::new(c1_x, c1_y), Point::new(c2_x, c2_y), c.2)
 }
 
 /// Bezier curve intersection algorithm and utilities
