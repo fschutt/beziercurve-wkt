@@ -47,6 +47,8 @@ use std::str::FromStr;
 
 extern crate quadtree_f32;
 
+pub mod intersection;
+
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
 pub struct Point { pub x: f32, pub y: f32 }
 
@@ -57,6 +59,12 @@ impl fmt::Display for Point {
 }
 
 impl Point {
+
+    #[inline]
+    pub const fn new(x: f32, y: f32) -> Self {
+        Self { x, y }
+    }
+
     /// Parses a `Point` from a str
     ///
     /// ```rust
