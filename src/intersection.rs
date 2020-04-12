@@ -1,3 +1,5 @@
+#![allow(non_snake_case)]
+
 //! Module for calculating curve-curve
 
 use crate::{Point, Line, QuadraticCurve, CubicCurve};
@@ -20,19 +22,94 @@ impl CubicCubicIntersection {
     }
 }
 
+// A line-curve intersection can intersect in up to 3 points
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
-pub struct CubicLineIntersection {
+pub enum CubicLineIntersection {
+    Intersect1 {
+        curve: CubicCurve,
+        line: Line,
+        t_curve_1: f32,
+        t_line_1: f32,
+    },
+    Intersect2 {
+        curve: CubicCurve,
+        line: Line,
+        t_curve_1: f32,
+        t_line_1: f32,
+        t_curve_2: f32,
+        t_line_2: f32,
+    },
+    Intersect3 {
+        curve: CubicCurve,
+        line: Line,
+        t_curve_1: f32,
+        t_line_1: f32,
+        t_curve_2: f32,
+        t_line_2: f32,
+        t_curve_3: f32,
+        t_line_3: f32,
+    }
+}
+
+impl CubicLineIntersection {
+
+    #[inline]
+    pub fn get_intersection_point_1(&self) -> Point {
+        use self::CubicLineIntersection::*;
+        match self {
+            Intersect1 { line, t_line_1, .. } => lerp(line.0, line.1, *t_line_1),
+            Intersect2 { line, t_line_1, .. } => lerp(line.0, line.1, *t_line_1),
+            Intersect3 { line, t_line_1, .. } => lerp(line.0, line.1, *t_line_1),
+        }
+    }
+
+    #[inline]
+    pub fn get_intersection_point_2(&self) -> Option<Point> {
+        use self::CubicLineIntersection::*;
+        match self {
+            Intersect1 { .. } => None,
+            Intersect2 { line, t_line_2, .. } => Some(lerp(line.0, line.1, *t_line_2)),
+            Intersect3 { line, t_line_2, .. } => Some(lerp(line.0, line.1, *t_line_2)),
+        }
+    }
+
+    #[inline]
+    pub fn get_intersection_point_3(&self) -> Option<Point> {
+        use self::CubicLineIntersection::*;
+        match self {
+            Intersect1 { .. } => None,
+            Intersect2 { .. } => None,
+            Intersect3 { line, t_line_3, .. } => Some(lerp(line.0, line.1, *t_line_3)),
+        }
+    }
+}
+
+#[inline]
+fn lerp(p1: Point, p2: Point, t: f32) -> Point {
+    let new_x = (1.0 - t) * p1.x + t * p2.x;
+    let new_y = (1.0 - t) * p1.y + t * p2.y;
+    Point::new(new_x, new_y)
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
+pub struct LineLineIntersection {
     pub t1: f32,
-    pub curve1: CubicCurve,
+    pub line1: Line,
     pub t2: f32,
     pub line2: Line,
 }
 
-impl CubicLineIntersection {
+impl LineLineIntersection {
+
+    #[inline]
     pub fn get_intersection_point_1(&self) -> Point {
-        evaluate(self.curve1, self.t1)
+        // lerp(line.0, line.1, t1)
+        let new_x = (1.0 - self.t1) * self.line1.0.x + self.t1 * self.line1.1.x;
+        let new_y = (1.0 - self.t1) * self.line1.0.y + self.t1 * self.line1.1.y;
+        Point::new(new_x, new_y)
     }
 
+    #[inline]
     pub fn get_intersection_point_2(&self) -> Point {
         // lerp(line.0, line.1, t2)
         let new_x = (1.0 - self.t2) * self.line2.0.x + self.t2 * self.line2.1.x;
@@ -43,147 +120,265 @@ impl CubicLineIntersection {
 
 pub enum IntersectionResult {
     NoIntersection,
-    CubicCubicIntersection(Vec<CubicCubicIntersection>),
-    InfiniteIntersectionsCubic(CubicCurve, CubicCurve),
+    LineLine(LineLineIntersection),
+    CubicLine(CubicLineIntersection),
+    CubicCubic(Vec<CubicCubicIntersection>),
+    InfiniteIntersectionsCubicCubic(CubicCurve, CubicCurve),
     InfiniteIntersectionsCubicLine(CubicCurve, Line),
+    InfiniteIntersectionsLineLine(Line, Line),
 }
 
 // Intersect a quadratic with another quadratic curve
 pub fn curve_curve_intersect(a: CubicCurve, b: CubicCurve) -> IntersectionResult {
-    use self::IntersectionResult::*;
 
     if a == b {
-        return InfiniteIntersectionsCubic(a, b);
+        return IntersectionResult::InfiniteIntersectionsCubicCubic(a, b);
     }
 
     let intersections = curve_intersections_inner(a, b, 0.0, 1.0, 0.0, 1.0, 1.0, false, 0, 32, 0.8);
 
     if intersections.is_empty() {
-        NoIntersection
+        IntersectionResult::NoIntersection
     } else {
-        CubicCubicIntersection(intersections)
+        IntersectionResult::CubicCubic(intersections)
     }
 }
 
-// Intersect a quadratic curve with a line
-#[allow(unused_variables)]
+/// Intersect a cubic curve with a line.
+///
+/// Based on http://www.particleincell.com/blog/2013/cubic-line-intersection/
 pub fn curve_line_intersect(
     (a1, a2, a3, a4): CubicCurve,
     (b1, b2): Line,
 ) -> IntersectionResult {
-    return IntersectionResult::NoIntersection; // TODO!
 
-    /*
-    // based on http://mysite.verizon.net/res148h4j/javascript/script_exact_cubic.html#the%20source%20code
-    function cubicRoots(P)
-    {
-        var a=P[0];
-        var b=P[1];
-        var c=P[2];
-        var d=P[3];
-
-        var A=b/a;
-        var B=c/a;
-        var C=d/a;
-
-        var Q, R, D, S, T, Im;
-
-        var Q = (3*B - Math.pow(A, 2))/9;
-        var R = (9*A*B - 27*C - 2*Math.pow(A, 3))/54;
-        var D = Math.pow(Q, 3) + Math.pow(R, 2);    // polynomial discriminant
-
-        var t=Array();
-
-        if (D >= 0)                                 // complex or duplicate roots
-        {
-            var S = sgn(R + Math.sqrt(D))*Math.pow(Math.abs(R + Math.sqrt(D)),(1/3));
-            var T = sgn(R - Math.sqrt(D))*Math.pow(Math.abs(R - Math.sqrt(D)),(1/3));
-
-            t[0] = -A/3 + (S + T);                    // real root
-            t[1] = -A/3 - (S + T)/2;                  // real part of complex root
-            t[2] = -A/3 - (S + T)/2;                  // real part of complex root
-            Im = Math.abs(Math.sqrt(3)*(S - T)/2);    // complex part of root pair
-
-            /*discard complex roots*/
-            if (Im!=0)
-            {
-                t[1]=-1;
-                t[2]=-1;
-            }
-
-        }
-        else                                          // distinct real roots
-        {
-            var th = Math.acos(R/Math.sqrt(-Math.pow(Q, 3)));
-
-            t[0] = 2*Math.sqrt(-Q)*Math.cos(th/3) - A/3;
-            t[1] = 2*Math.sqrt(-Q)*Math.cos((th + 2*Math.PI)/3) - A/3;
-            t[2] = 2*Math.sqrt(-Q)*Math.cos((th + 4*Math.PI)/3) - A/3;
-            Im = 0.0;
-        }
-
-        /*discard out of spec roots*/
-        for (var i=0;i<3;i++)
-            if (t[i]<0 || t[i]>1.0) t[i]=-1;
-
-        /*sort but place -1 at the end*/
-        t=sortSpecial(t);
-
-        console.log(t[0]+" "+t[1]+" "+t[2]);
-        return t;
+    if b1 == b2 {
+        return IntersectionResult::NoIntersection;
     }
 
-    //computes intersection between a cubic spline and a line segment
-    function computeIntersections(px,py,lx,ly)
-    {
-        var X=Array();
+    let A = b2.y - b1.y; // A = y2 - y1
+    let B = b1.x - b2.x; // B = x1 - x2
+    let C = b1.x * (b1.y - b2.y) + b1.y * (b2.x - b1.x); // C = x1*(y1-y2)+y1*(x2-x1)
 
-        var A=ly[1]-ly[0];      //A=y2-y1
-        var B=lx[0]-lx[1];      //B=x1-x2
-        var C=lx[0]*(ly[0]-ly[1]) +
-              ly[0]*(lx[1]-lx[0]);  //C=x1*(y1-y2)+y1*(x2-x1)
+    let bx = bezier_coeffs(a1.x, a2.x, a3.x, a4.x);
+    let by = bezier_coeffs(a1.y, a2.y, a3.y, a4.y);
 
-        var bx = bezierCoeffs(px[0],px[1],px[2],px[3]);
-        var by = bezierCoeffs(py[0],py[1],py[2],py[3]);
+    let p_0 = A * bx.0 + B * by.0;     // t^3
+    let p_1 = A * bx.1 + B * by.1;     // t^2
+    let p_2 = A * bx.2 + B * by.2;     // t
+    let p_3 = A * bx.3 + B * by.3 + C; // 1
 
-        var P = Array();
-        P[0] = A*bx[0]+B*by[0];     /*t^3*/
-        P[1] = A*bx[1]+B*by[1];     /*t^2*/
-        P[2] = A*bx[2]+B*by[2];     /*t*/
-        P[3] = A*bx[3]+B*by[3] + C; /*1*/
+    let r = cubic_roots(p_0, p_1, p_2, p_3);
 
-        var r=cubicRoots(P);
+    let mut intersections = (None, None, None);
 
-        /*verify the roots are in bounds of the linear segment*/
-        for (var i=0;i<3;i++)
-        {
-            t=r[i];
+    // for root in r
+    macro_rules! unroll_loop {($index:tt) => ({
+        if let Some(t) = r.$index {
 
-            X[0]=bx[0]*t*t*t+bx[1]*t*t+bx[2]*t+bx[3];
-            X[1]=by[0]*t*t*t+by[1]*t*t+by[2]*t+by[3];
+            let final_x = bx.0* t * t * t + bx.1 * t * t + bx.2 * t + bx.3;
+            let final_y = by.0* t * t * t + by.1 * t * t + by.2 * t + by.3;
 
-            /*above is intersection point assuming infinitely long line segment,
-              make sure we are also in bounds of the line*/
-            var s;
-            if ((lx[1]-lx[0])!=0)           /*if not vertical line*/
-                s=(X[0]-lx[0])/(lx[1]-lx[0]);
-            else
-                s=(X[1]-ly[0])/(ly[1]-ly[0]);
+            // (final_x, final_y) is intersection point assuming infinitely long line segment,
+            // make sure we are also in bounds of the line
 
-            /*in bounds?*/
-            if (t<0 || t>1.0 || s<0 || s>1.0)
-            {
-                X[0]=-100;  /*move off screen*/
-                X[1]=-100;
+            let x_dist = b2.x - b1.x;
+            let y_dist = b2.y - b1.y;
+
+            let t_line = if x_dist != 0.0 {
+                // if not vertical line
+                (final_x - b1.x) / x_dist
+            } else {
+                (final_y - b1.y) / y_dist
+            };
+
+            intersections.$index = if !t.is_sign_positive() || t > 1.0 || !t_line.is_sign_positive() || t_line > 1.0 {
+                None
+            } else {
+                Some((t_line, t))
             }
-
-            /*move intersection point*/
-            I[i].setAttributeNS(null,"cx",X[0]);
-            I[i].setAttributeNS(null,"cy",X[1]);
         }
+    })}
+
+    unroll_loop!(0);
+    unroll_loop!(1);
+    unroll_loop!(2);
+
+    use self::CubicLineIntersection::*;
+
+    match intersections {
+        (Some((t_line_1, t_curve_1)), None, None) =>
+            IntersectionResult::CubicLine(Intersect1 {
+                curve: (a1, a2, a3, a4),
+                line: (b1, b2),
+                t_curve_1,
+                t_line_1,
+            }),
+        (Some((t_line_1, t_curve_1)), Some((t_line_2, t_curve_2)), None) =>
+            IntersectionResult::CubicLine(Intersect2 {
+                curve: (a1, a2, a3, a4),
+                line: (b1, b2),
+                t_curve_1,
+                t_line_1,
+                t_curve_2,
+                t_line_2,
+            }),
+        (Some((t_line_1, t_curve_1)), Some((t_line_2, t_curve_2)), Some((t_line_3, t_curve_3))) =>
+            IntersectionResult::CubicLine(Intersect3 {
+                curve: (a1, a2, a3, a4),
+                line: (b1, b2),
+                t_curve_1,
+                t_line_1,
+                t_curve_2,
+                t_line_2,
+                t_curve_3,
+                t_line_3,
+            }),
+        _ => IntersectionResult::NoIntersection,
     }
-    */
 }
+
+// based on http://mysite.verizon.net/res148h4j/javascript/script_exact_cubic.html#the%20source%20code
+#[inline(always)]
+fn cubic_roots(a: f32, b: f32, c: f32, d: f32) -> (Option<f32>, Option<f32>, Option<f32>) {
+
+    use std::f32::consts::PI;
+
+    // special case for linear and quadratic case
+    if is_zero(a) {
+        if is_zero(b) {
+           // linear formula
+
+           let p = -1.0 * (d / c);
+
+           let ret = (
+               if !p.is_sign_positive() || p > 1.0 { None } else { Some(p) },
+               None,
+               None
+           );
+
+           let ret = sort_special(ret);
+
+           return ret;
+        } else {
+           // quadratic discriminant
+           let d_q = c.powi(2) + 4.0 * b * d;
+
+            if d_q.is_sign_positive() {
+                let d_q = d_q.sqrt();
+
+                let m = -1.0 * (d_q + c) / (2.0 * b);
+                let n = (d_q - c) / (2.0 * b);
+
+                let ret = (
+                    if !m.is_sign_positive() || m > 1.0 { None } else { Some(m) },
+                    if !n.is_sign_positive() || n > 1.0 { None } else { Some(n) },
+                    None,
+                );
+
+                let ret = sort_special(ret);
+
+                return ret;
+            }
+        }
+    }
+
+    let A = b / a;
+    let B = c / a;
+    let C = d / a;
+
+    let Q = (3.0 * B - A.powi(2)) / 9.0;
+    let R = (9.0 * A * B - 27.0 * C - 2.0 * A.powi(3)) / 54.0;
+    let D = Q.powi(3) + R.powi(2); // polynomial discriminant
+
+    let ret = if D.is_sign_positive() {
+
+        // complex or duplicate roots
+        const ONE_THIRD: f32 = 1.0 / 3.0;
+
+        let D_sqrt = D.sqrt();
+        let S = sign(R + D_sqrt) * (R + D_sqrt).abs().powf(ONE_THIRD);
+        let T = sign(R - D_sqrt) * (R - D_sqrt).abs().powf(ONE_THIRD);
+
+        let m = -A / 3.0 + (S + T);         // real root
+        let n = -A / 3.0 - (S + T) / 2.0;   // real part of complex root
+        let p = -A / 3.0 - (S + T) / 2.0;   // real part of complex root
+
+        let mut ret = (
+            if !m.is_sign_positive() || m > 1.0 { None } else { Some(m) },
+            if !n.is_sign_positive() || n > 1.0 { None } else { Some(n) },
+            if !p.is_sign_positive() || p > 1.0 { None } else { Some(p) },
+        );
+
+        let imaginary = (3.0_f32.sqrt() * (S - T) / 2.0).abs(); // complex part of root pair
+
+        // discard complex roots
+        if !is_zero(imaginary) {
+            ret.1 = None;
+            ret.2 = None;
+        }
+
+        ret
+    } else {
+
+        let th = (R / (-1.0 * Q.powi(3)).sqrt()).acos();
+        let minus_q_sqrt = (-1.0 * Q).sqrt();
+
+        let m = 2.0 * minus_q_sqrt * (th / 3.0).cos() - A / 3.0;
+        let n = 2.0 * minus_q_sqrt * ((th + 2.0 * PI) / 3.0).cos() - A / 3.0;
+        let p = 2.0 * minus_q_sqrt * ((th + 4.0 * PI) / 3.0).cos() - A / 3.0;
+
+        // discard out of spec roots
+        (
+            if !m.is_sign_positive() || m > 1.0 { None } else { Some(m) },
+            if !n.is_sign_positive() || n > 1.0 { None } else { Some(n) },
+            if !p.is_sign_positive() || p > 1.0 { None } else { Some(p) },
+        )
+    };
+
+    // sort but place None at the end
+    let ret = sort_special(ret);
+
+    ret
+}
+
+#[inline]
+fn sign(a: f32) -> f32 {
+    if a.is_sign_positive() { 1.0 } else { -1.0 }
+}
+
+#[inline]
+fn bezier_coeffs(a: f32, b: f32, c: f32, d: f32) -> (f32, f32, f32, f32) {
+    (
+        -a + 3.0*b + -3.0*c + d,
+        3.0*a - 6.0*b + 3.0*c,
+        -3.0*a + 3.0*b,
+        a
+    )
+}
+
+type OptionTuple = (Option<f32>, Option<f32>, Option<f32>);
+
+// Sort so that the None values are at the end
+#[inline]
+fn sort_special(a: OptionTuple) -> OptionTuple {
+    match a {
+        (None, None, None) => (None, None, None),
+        (Some(a), None, None) |
+        (None, Some(a), None) |
+        (None, None, Some(a)) => (Some(a), None, None),
+        (Some(a), Some(b), None) |
+        (None, Some(a), Some(b)) |
+        (Some(b), None, Some(a)) => (Some(a.min(b)), Some(a.max(b)), None),
+        (Some(a), Some(b), Some(c)) => {
+            let new_a = a.min(b).min(c);
+            let new_b = if a < b && b < c { b } else if b < c && c < a { c } else { a };
+            let new_c = a.max(b).max(c);
+            (Some(new_a), Some(new_b), Some(new_c))
+        }
+    }
+}
+
 
 //  Determines the intersection point of the line defined by points A and B with the
 //  line defined by points C and D.
@@ -192,48 +387,66 @@ pub fn curve_line_intersect(
 //  Returns NO if there is no determinable intersection point, in which case X,Y will
 //  be unmodified.
 #[inline]
-#[allow(unused_variables)]
 pub fn line_line_intersect(
-    l1: Line,
-    l2: Line,
+    (a, b): Line,
+    (c, d): Line,
 ) -> IntersectionResult {
 
-    return IntersectionResult::NoIntersection; // TODO
-/*
-       //  Fail if either line is undefined.
-      if (Ax==Bx && Ay==By || Cx==Dx && Cy==Dy) return IntersectionResult::NoIntersection;
+    if (a, b) == (c, d) {
+        return IntersectionResult::InfiniteIntersectionsLineLine((a, b), (c, d));
+    }
 
+    // Check if both points of the line are the same
+    if a == b || c == d {
+        return IntersectionResult::NoIntersection;
+    }
 
-      double  distAB, theCos, theSin, newX, ABpos ;
+    let (original_a, original_b) = (a, b);
+    let (original_c, original_d) = (c, d);
 
-      //  (1) Translate the system so that point A is on the origin.
-      Bx-=Ax; By-=Ay;
-      Cx-=Ax; Cy-=Ay;
-      Dx-=Ax; Dy-=Ay;
+    //  (1) Translate the system so that point A is on the origin.
+    let b = Point::new(b.x - a.x, b.y - a.y);
+    let mut c = Point::new(c.x - a.x, c.y - a.y);
+    let mut d = Point::new(d.x - a.x, d.y - a.y);
 
-      //  Discover the length of segment A-B.
-      distAB=sqrt(Bx*Bx+By*By);
+    // Get the length from a to b
+    let dist_ab = (b.x*b.x + b.y*b.y).sqrt();
 
-      //  (2) Rotate the system so that point B is on the positive X axis.
-      theCos=Bx/distAB;
-      theSin=By/distAB;
-      newX=Cx*theCos+Cy*theSin;
-      Cy  =Cy*theCos-Cx*theSin; Cx=newX;
-      newX=Dx*theCos+Dy*theSin;
-      Dy  =Dy*theCos-Dx*theSin; Dx=newX;
+    // Rotate the system so that point B is on the positive X axis.
+    let cos_b = b.x / dist_ab;
+    let sin_b = b.y / dist_ab;
 
-      //  Fail if the lines are parallel.
-      if Cy == Dy return None;
+    // Rotate c and d around b
+    let new_x = c.x * cos_b + c.y * sin_b;
+    c.y = c.y * cos_b - c.x * sin_b;
+    c.x = new_x;
 
-      //  (3) Discover the position of the intersection point along line A-B.
-      ABpos=Dx+(Cx-Dx)*Dy/(Dy-Cy);
+    let new_x = d.x * cos_b + d.y * sin_b;
+    d.y = d.y * cos_b - d.x * sin_b;
+    d.x = new_x;
 
-      //  (4) Apply the discovered position to line A-B in the original coordinate system.
-      let x =Ax+ABpos*theCos;
-      let y =Ay+ABpos*theSin;
+    // Fail if the lines are parallel
+    if c.y == d.y {
+        return IntersectionResult::NoIntersection;
+    }
 
-      Some(IntersectionResult:: Point::new(x, y))
-*/
+    // Calculate the position of the intersection point along line A-B.
+    let t = d.x + (c.x - d.x) * d.y / (d.y - c.y);
+
+    let new_x = a.x + t * cos_b;
+    let new_y = a.y + t * cos_b;
+
+    // The t projected onto the line a - b
+    let t1 = ((b.x - a.x) / (new_x - a.x) + (b.y - a.y) / (new_y - a.y)) / 2.0;
+    // The t projected onto the line b - c
+    let t2 = ((d.x - c.x) / (new_x - c.x) + (d.y - c.y) / (new_y - c.y)) / 2.0;
+
+    IntersectionResult::LineLine(LineLineIntersection {
+        t1,
+        line1: (original_a, original_b),
+        t2,
+        line2: (original_c, original_d),
+    })
 }
 
 // Convert a quadratic bezier into a cubic bezier
