@@ -512,6 +512,11 @@ impl BezierCurveCache {
     }
 
     #[inline]
+    pub fn get_curve(&self) -> &BezierCurve {
+        &self.curve
+    }
+
+    #[inline]
     pub fn get_curve_part(&self, i: CurveIndex) -> Option<&BezierCurveItem> {
         self.curve.items.get(i.0)
     }
