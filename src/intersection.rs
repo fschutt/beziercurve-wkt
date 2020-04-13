@@ -230,6 +230,7 @@ pub fn quadratic_interpolate_bezier(curve: QuadraticCurve, t: f64) -> Point {
 /// Intersect a cubic curve with a line.
 ///
 /// Based on http://www.particleincell.com/blog/2013/cubic-line-intersection/
+// https://jsbin.com/nawoxemopa/1/edit?js,console
 pub fn curve_line_intersect(
     (a1, a2, a3, a4): CubicCurve,
     (b1, b2): Line,
@@ -252,12 +253,12 @@ pub fn curve_line_intersect(
     let bx = bezier_coeffs(a1.x, a2.x, a3.x, a4.x);
     let by = bezier_coeffs(a1.y, a2.y, a3.y, a4.y);
 
-    let p_0 = A * bx.0 as f64 + B * by.0 as f64;     // t^3
-    let p_1 = A * bx.1 as f64 + B * by.1 as f64;     // t^2
-    let p_2 = A * bx.2 as f64 + B * by.2 as f64;     // t
-    let p_3 = A * bx.3 as f64 + B * by.3 as f64 + C; // 1
+    let p_0 = A * bx.0 + B * by.0;     // t^3
+    let p_1 = A * bx.1 + B * by.1;     // t^2
+    let p_2 = A * bx.2 + B * by.2;     // t
+    let p_3 = A * bx.3 + B * by.3 + C; // 1
 
-    let r = cubic_roots(p_0 as f64, p_1 as f64, p_2 as f64, p_3 as f64);
+    let r = cubic_roots(p_0, p_1, p_2, p_3);
 
     let mut intersections = (None, None, None);
 
@@ -329,8 +330,6 @@ pub fn curve_line_intersect(
 #[inline(always)]
 fn cubic_roots(a: f64, b: f64, c: f64, d: f64) -> (Option<f64>, Option<f64>, Option<f64>) {
 
-    println!("a: {}, b: {}, c: {}, d: {}", a, b, c, d);
-
     use std::f64::consts::PI;
 
     // special case for linear and quadratic case
@@ -376,16 +375,9 @@ fn cubic_roots(a: f64, b: f64, c: f64, d: f64) -> (Option<f64>, Option<f64>, Opt
     let B = c / a;
     let C = d / a;
 
-    println!("A: {}, B: {}, C: {}", A, B, C);
-
     let Q = (3.0 * B - (A*A)) / 9.0;
     let R = (9.0 * A * B - 27.0 * C - 2.0 * (A*A*A)) / 54.0;
     let D = Q*Q*Q + R*R; // polynomial discriminant
-
-    println!("Q: {}, R: {}, D: {}", Q, R, D);
-
-    // -38685626000000000000000000
-    println!("polynomial discriminant: {}", D);
 
     let ret = if D.is_sign_positive() {
 

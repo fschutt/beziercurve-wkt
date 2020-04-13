@@ -594,7 +594,13 @@ impl BezierCurveCache {
             return DEFAULT_VEC;
         }
 
+        println!("curve quadtree: {:#?}", self.quad_tree);
+        println!("curve bbox: {:#?}", self.quad_tree.bbox());
+        println!("line bbox: {:#?}", curve.get_bbox());
+
         let curve_part_ids = self.quad_tree.get_ids_that_overlap(&curve_bbox);
+
+        println!("curve_part_ids: {:?}!", curve_part_ids);
 
         curve_part_ids
         .iter()
