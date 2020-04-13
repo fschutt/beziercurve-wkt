@@ -42,17 +42,22 @@
 //! MIT
 
 extern crate quadtree_f32;
+#[cfg(feature = "parallel")]
+extern crate rayon;
 
 use std::{
     fmt,
     num::ParseFloatError,
     str::FromStr,
+    ops::{Index, IndexMut},
 };
-use quadtree_f32::Rect;
+use quadtree_f32::{Rect, QuadTree, ItemId, Item};
+#[cfg(feature = "parallel")]
+use rayon::iter::{ParallelIterator, IndexedParallelIterator, IntoParallelRefIterator};
 
 mod intersection;
 
-pub use intersection::IntersectionResult;
+pub use intersection::{IntersectionResult, Intersection, InfiniteIntersections};
 pub use intersection::BezierNormalVector;
 
 pub type Line           = (Point, Point);
@@ -122,6 +127,10 @@ impl Bbox {
     #[inline]
     pub fn get_height(&self) -> f32 {
         self.max_y - self.min_y
+    }
+
+    pub fn overlaps(&self, other: Bbox) -> bool {
+        translate_bbox(*self).overlaps_rect(&translate_bbox(other))
     }
 }
 
@@ -306,6 +315,15 @@ const fn translate_bbox(bbox: Bbox) -> Rect {
     }
 }
 
+const fn translate_rect(rect: Rect) -> Bbox {
+    Bbox {
+       max_x: rect.max_x,
+       max_y: rect.max_y,
+       min_x: rect.min_x,
+       min_y: rect.min_y,
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseErrorWithContext {
     /// For each subsequent items `a` and `b` in the curve, `a.get_last_point()` has to match `b.get_first_point()`
@@ -419,6 +437,164 @@ impl BezierCurve {
             1 => self.items[0].get_first_point() == self.items[0].get_last_point(),
             n => self.items[0].get_first_point() == self.items[n - 1].get_last_point(),
         }
+    }
+
+    /// Builds a quadtree-based cache from the current bezier curve
+    pub fn cache(self) -> BezierCurveCache {
+        BezierCurveCache::new(self)
+    }
+}
+
+// Index of the curve item in the curve.items
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CurveIndex(usize);
+
+impl Index<CurveIndex> for BezierCurve {
+    type Output = BezierCurveItem;
+    fn index(&self, i: CurveIndex) -> &BezierCurveItem {
+        &self.items[i.0]
+    }
+}
+
+impl IndexMut<CurveIndex> for BezierCurve {
+    fn index_mut(&mut self, i: CurveIndex) -> &mut BezierCurveItem {
+        &mut self.items[i.0]
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub struct BezierCurveCache {
+    curve: BezierCurve,
+    quad_tree: QuadTree,
+}
+
+const DEFAULT_VEC: Vec<(CurveIndex, Intersection)> = Vec::new();
+
+impl BezierCurveCache {
+
+    /// Creates a new quadtree + bezier cache from a bezier curve
+    #[cfg(feature = "parallel")]
+    #[inline]
+    pub fn new(curve: BezierCurve) -> Self {
+
+        let items = curve.items.par_iter().enumerate().map(|(id, i)| {
+            (ItemId(id), Item::Rect(translate_bbox(i.get_bbox())))
+        }).collect::<Vec<_>>();
+
+        let quad_tree = QuadTree::new(items.into_iter());
+
+        Self { curve, quad_tree }
+    }
+
+    /// Creates a new quadtree + bezier cache from a bezier curve
+    #[cfg(not(feature = "parallel"))]
+    #[inline]
+    pub fn new(curve: BezierCurve) -> Self {
+
+        let quad_tree = QuadTree::new(curve.items.iter().enumerate().map(|(id, i)| {
+            (ItemId(id), Item::Rect(translate_bbox(i.get_bbox())))
+        }));
+
+        Self { curve, quad_tree }
+    }
+
+    #[inline]
+    pub fn get_bbox(&self) -> Bbox {
+        translate_rect(self.quad_tree.bbox())
+    }
+
+    #[inline]
+    pub fn get_curve_part(&self, i: CurveIndex) -> Option<&BezierCurveItem> {
+        self.curve.items.get(i.0)
+    }
+
+    #[inline]
+    pub fn get_curve_part_mut(&mut self, i: CurveIndex) -> Option<&mut BezierCurveItem> {
+        self.curve.items.get_mut(i.0)
+    }
+
+    #[cfg(not(feature = "parallel"))]
+    #[inline]
+    pub fn get_intersections(&self, curve: &Self) -> Vec<(CurveIndex, Intersection)> {
+        if !self.get_bbox().overlaps(curve.get_bbox()) {
+            return DEFAULT_VEC;
+        }
+
+        curve.curve.items
+        .iter()
+        .flat_map(|item| self.get_intersections_with_item(item).into_iter())
+        .collect()
+    }
+
+    #[cfg(feature = "parallel")]
+    #[inline]
+    pub fn get_intersections(&self, curve: &Self) -> Vec<(CurveIndex, Intersection)> {
+        if !self.get_bbox().overlaps(curve.get_bbox()) {
+            return DEFAULT_VEC;
+        }
+
+        let result = curve.curve.items
+        .par_iter()
+        .map(|item| self.get_intersections_with_item(item))
+        .collect::<Vec<Vec<_>>>();
+
+        result.into_iter().flat_map(|i| i).collect()
+    }
+
+    /// Returns the intersection with a single bezier curve item
+    #[cfg(feature = "parallel")]
+    #[inline]
+    pub fn get_intersections_with_item(&self, curve: &BezierCurveItem) -> Vec<(CurveIndex, Intersection)> {
+        use intersection::IntersectionResult::*;
+
+        let curve_bbox = translate_bbox(curve.get_bbox());
+
+        if !curve_bbox.overlaps_rect(&self.quad_tree.bbox()) {
+            return DEFAULT_VEC;
+        }
+
+        let curve_part_ids = self.quad_tree.get_ids_that_overlap(&curve_bbox);
+
+        curve_part_ids
+        .par_iter()
+        .filter_map(|id| {
+            self.curve.items.get(id.0)
+            .map(|part| (CurveIndex(id.0), part))
+        })
+        .filter_map(|(id, item)| match item.intersect(curve) {
+            // ignore InfiniteIntersections and NoIntersection
+            NoIntersection | Infinite(_) => None,
+            FoundIntersection(i) => Some((id, i))
+        })
+        .collect()
+    }
+
+    /// Returns the intersection with a single bezier curve item
+    #[cfg(not(feature = "parallel"))]
+    #[inline]
+    pub fn get_intersections_with_item(&self, curve: &BezierCurveItem) -> Vec<(CurveIndex, Intersection)> {
+        use intersection::IntersectionResult::*;
+
+        let curve_bbox = translate_bbox(curve.get_bbox());
+
+        if !curve_bbox.overlaps_rect(&self.quad_tree.bbox()) {
+            return DEFAULT_VEC;
+        }
+
+        let curve_part_ids = self.quad_tree.get_ids_that_overlap(&curve_bbox);
+
+        curve_part_ids
+        .iter()
+        .filter_map(|id| {
+            self.curve.items.get(id.0)
+            .map(|part| (CurveIndex(id.0), part))
+        })
+        .filter_map(|(id, item)| match item.intersect(curve) {
+            // ignore InfiniteIntersections and NoIntersection
+            NoIntersection | Infinite(_) => None,
+            FoundIntersection(i) => Some((id, i))
+        })
+        .collect()
     }
 }
 

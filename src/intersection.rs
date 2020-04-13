@@ -4,6 +4,29 @@
 
 use crate::{Point, Line, QuadraticCurve, CubicCurve};
 
+/// When two curves are the same, they have infinite intersections
+/// Currently, this is treated the same as having no intersections
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
+pub enum InfiniteIntersections {
+    CubicCubic(CubicCurve, CubicCurve),
+    CubicLine(CubicCurve, Line),
+    LineLine(Line, Line),
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub enum Intersection {
+    LineLine(LineLineIntersection),
+    CubicLine(CubicLineIntersection),
+    CubicCubic(Vec<CubicCubicIntersection>),
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub enum IntersectionResult {
+    NoIntersection,
+    FoundIntersection(Intersection),
+    Infinite(InfiniteIntersections)
+}
+
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
 pub struct CubicCubicIntersection {
     pub t1: f32,
@@ -121,29 +144,21 @@ impl LineLineIntersection {
     }
 }
 
-pub enum IntersectionResult {
-    NoIntersection,
-    LineLine(LineLineIntersection),
-    CubicLine(CubicLineIntersection),
-    CubicCubic(Vec<CubicCubicIntersection>),
-    InfiniteIntersectionsCubicCubic(CubicCurve, CubicCurve),
-    InfiniteIntersectionsCubicLine(CubicCurve, Line),
-    InfiniteIntersectionsLineLine(Line, Line),
-}
-
 // Intersect a quadratic with another quadratic curve
 pub fn curve_curve_intersect(a: CubicCurve, b: CubicCurve) -> IntersectionResult {
 
+    use self::IntersectionResult::*;
+
     if a == b {
-        return IntersectionResult::InfiniteIntersectionsCubicCubic(a, b);
+        return Infinite(InfiniteIntersections::CubicCubic(a, b));
     }
 
     let intersections = curve_intersections_inner(a, b, 0.0, 1.0, 0.0, 1.0, 1.0, false, 0, 32, 0.8);
 
     if intersections.is_empty() {
-        IntersectionResult::NoIntersection
+        NoIntersection
     } else {
-        IntersectionResult::CubicCubic(intersections)
+        FoundIntersection(Intersection::CubicCubic(intersections))
     }
 }
 
@@ -195,7 +210,7 @@ pub fn cubic_bezier_normal(curve: CubicCurve, t: f32) -> BezierNormalVector {
 }
 
 #[inline]
-fn quadratic_interpolate_bezier(curve: QuadraticCurve, t: f32) -> Point {
+pub fn quadratic_interpolate_bezier(curve: QuadraticCurve, t: f32) -> Point {
     let one_minus = 1.0 - t;
     let one_minus_square = one_minus.powi(2);
 
@@ -220,8 +235,14 @@ pub fn curve_line_intersect(
     (b1, b2): Line,
 ) -> IntersectionResult {
 
+    use self::{
+        IntersectionResult::*,
+        CubicLineIntersection::*,
+        Intersection::*,
+    };
+
     if b1 == b2 {
-        return IntersectionResult::NoIntersection;
+        return NoIntersection;
     }
 
     let A = b2.y - b1.y; // A = y2 - y1
@@ -272,27 +293,25 @@ pub fn curve_line_intersect(
     unroll_loop!(1);
     unroll_loop!(2);
 
-    use self::CubicLineIntersection::*;
-
     match intersections {
         (Some((t_line_1, t_curve_1)), None, None) =>
-            IntersectionResult::CubicLine(Intersect1 {
+            FoundIntersection(CubicLine(Intersect1 {
                 curve: (a1, a2, a3, a4),
                 line: (b1, b2),
                 t_curve_1,
                 t_line_1,
-            }),
+            })),
         (Some((t_line_1, t_curve_1)), Some((t_line_2, t_curve_2)), None) =>
-            IntersectionResult::CubicLine(Intersect2 {
+            FoundIntersection(CubicLine(Intersect2 {
                 curve: (a1, a2, a3, a4),
                 line: (b1, b2),
                 t_curve_1,
                 t_line_1,
                 t_curve_2,
                 t_line_2,
-            }),
+            })),
         (Some((t_line_1, t_curve_1)), Some((t_line_2, t_curve_2)), Some((t_line_3, t_curve_3))) =>
-            IntersectionResult::CubicLine(Intersect3 {
+            FoundIntersection(CubicLine(Intersect3 {
                 curve: (a1, a2, a3, a4),
                 line: (b1, b2),
                 t_curve_1,
@@ -301,8 +320,8 @@ pub fn curve_line_intersect(
                 t_line_2,
                 t_curve_3,
                 t_line_3,
-            }),
-        _ => IntersectionResult::NoIntersection,
+            })),
+        _ => NoIntersection,
     }
 }
 
@@ -460,13 +479,15 @@ pub fn line_line_intersect(
     (c, d): Line,
 ) -> IntersectionResult {
 
+    use self::{InfiniteIntersections::*, IntersectionResult::*};
+
     if (a, b) == (c, d) {
-        return IntersectionResult::InfiniteIntersectionsLineLine((a, b), (c, d));
+        return Infinite(LineLine((a, b), (c, d)));
     }
 
     // Check if both points of the line are the same
     if a == b || c == d {
-        return IntersectionResult::NoIntersection;
+        return NoIntersection;
     }
 
     let (original_a, original_b) = (a, b);
@@ -495,7 +516,7 @@ pub fn line_line_intersect(
 
     // Fail if the lines are parallel
     if c.y == d.y {
-        return IntersectionResult::NoIntersection;
+        return NoIntersection;
     }
 
     // Calculate the position of the intersection point along line A-B.
@@ -509,12 +530,12 @@ pub fn line_line_intersect(
     // The t projected onto the line b - c
     let t2 = ((d.x - c.x) / (new_x - c.x) + (d.y - c.y) / (new_y - c.y)) / 2.0;
 
-    IntersectionResult::LineLine(LineLineIntersection {
+    FoundIntersection(Intersection::LineLine(LineLineIntersection {
         t1,
         line1: (original_a, original_b),
         t2,
         line2: (original_c, original_d),
-    })
+    }))
 }
 
 // Convert a quadratic bezier into a cubic bezier
