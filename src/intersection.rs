@@ -522,13 +522,20 @@ pub fn line_line_intersect(
     // Calculate the position of the intersection point along line A-B.
     let t = d.x + (c.x - d.x) * d.y / (d.y - c.y);
 
-    let new_x = a.x + t * cos_b;
-    let new_y = a.y + t * cos_b;
+    let new_x = original_a.x + t * cos_b;
+    let new_y = original_a.y + t * sin_b;
 
     // The t projected onto the line a - b
-    let t1 = ((b.x - a.x) / (new_x - a.x) + (b.y - a.y) / (new_y - a.y)) / 2.0;
+    let t1 = (
+        ((new_x - original_a.x) / (original_b.x - original_a.x)) +
+        ((new_y - original_a.y) / (original_b.y - original_a.y))
+    ) / 2.0;
+
     // The t projected onto the line b - c
-    let t2 = ((d.x - c.x) / (new_x - c.x) + (d.y - c.y) / (new_y - c.y)) / 2.0;
+    let t2 = (
+        ((new_x - original_c.x) / (original_d.x - original_c.x)) +
+        ((new_y - original_c.y) / (original_d.y - original_c.y))
+    ) / 2.0;
 
     FoundIntersection(Intersection::LineLine(LineLineIntersection {
         t1,
