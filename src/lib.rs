@@ -65,7 +65,7 @@ pub type QuadraticCurve = (Point, Point, Point);
 pub type CubicCurve     = (Point, Point, Point, Point);
 
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
-pub struct Point { pub x: f32, pub y: f32 }
+pub struct Point { pub x: f64, pub y: f64 }
 
 impl fmt::Display for Point {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -76,7 +76,7 @@ impl fmt::Display for Point {
 impl Point {
 
     #[inline]
-    pub const fn new(x: f32, y: f32) -> Self {
+    pub const fn new(x: f64, y: f64) -> Self {
         Self { x, y }
     }
 
@@ -89,7 +89,7 @@ impl Point {
     /// assert_eq!(parsed, Point { x: 5.0, y: 7.0 });
     /// ```
     pub fn from_str(s: &str) -> Result<Self, ParseError> {
-        use std::f32;
+        use std::f64;
 
         let s = s.trim();
         let mut number_iterator = s.split_whitespace();
@@ -97,7 +97,7 @@ impl Point {
         let y = number_iterator.next();
 
         match (x, y) {
-            (Some(x), Some(y)) => Ok(Point::new(f32::from_str(x)?, f32::from_str(y)?)),
+            (Some(x), Some(y)) => Ok(Point::new(f64::from_str(x)?, f64::from_str(y)?)),
             _ => Err(ParseError::FailedToParsePoint(s.to_string())),
         }
     }
@@ -105,10 +105,10 @@ impl Point {
 
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
 pub struct Bbox {
-    pub max_x: f32,
-    pub max_y: f32,
-    pub min_x: f32,
-    pub min_y: f32,
+    pub max_x: f64,
+    pub max_y: f64,
+    pub min_x: f64,
+    pub min_y: f64,
 }
 
 impl fmt::Display for Bbox {
@@ -120,13 +120,13 @@ impl fmt::Display for Bbox {
 impl Bbox {
     /// Returns the height of the bbox
     #[inline]
-    pub fn get_width(&self) -> f32 {
+    pub fn get_width(&self) -> f64 {
         self.max_x - self.min_x
     }
 
     /// Returns the height of the bbox
     #[inline]
-    pub fn get_height(&self) -> f32 {
+    pub fn get_height(&self) -> f64 {
         self.max_y - self.min_y
     }
 
@@ -161,7 +161,7 @@ macro_rules! get_max_fn {
         #[doc = $max_str]
         /// value of the `BezierCurveItem` - useful for calculating bounding boxes
         #[inline]
-        pub fn $fn_name(&self) -> f32 {
+        pub fn $fn_name(&self) -> f64 {
             use self::BezierCurveItem::*;
             match self {
                 Line((p_start, p_end)) => {
@@ -288,7 +288,7 @@ impl BezierCurveItem {
     }
 
     /// Returns the normal of the curve / line at t
-    pub fn normal(&self, t: f32) -> BezierNormalVector {
+    pub fn normal(&self, t: f64) -> BezierNormalVector {
         use self::BezierCurveItem::*;
         use crate::intersection::*;
         match self {
@@ -311,19 +311,19 @@ impl BezierCurveItem {
 
 const fn translate_bbox(bbox: Bbox) -> Rect {
     Rect {
-       max_x: bbox.max_x,
-       max_y: bbox.max_y,
-       min_x: bbox.min_x,
-       min_y: bbox.min_y,
+       max_x: bbox.max_x as f32,
+       max_y: bbox.max_y as f32,
+       min_x: bbox.min_x as f32,
+       min_y: bbox.min_y as f32,
     }
 }
 
 const fn translate_rect(rect: Rect) -> Bbox {
     Bbox {
-       max_x: rect.max_x,
-       max_y: rect.max_y,
-       min_x: rect.min_x,
-       min_y: rect.min_y,
+       max_x: rect.max_x as f64,
+       max_y: rect.max_y as f64,
+       min_x: rect.min_x as f64,
+       min_y: rect.min_y as f64,
     }
 }
 
@@ -423,10 +423,10 @@ impl BezierCurve {
 
     pub fn get_bbox(&self) -> Bbox {
 
-        let mut max_x = 0.0_f32;
-        let mut min_x = 0.0_f32;
-        let mut max_y = 0.0_f32;
-        let mut min_y = 0.0_f32;
+        let mut max_x = 0.0_f64;
+        let mut min_x = 0.0_f64;
+        let mut max_y = 0.0_f64;
+        let mut min_y = 0.0_f64;
 
         for i in &self.items {
             max_x = max_x.max(i.get_max_x());

@@ -29,9 +29,9 @@ pub enum IntersectionResult {
 
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
 pub struct CubicCubicIntersection {
-    pub t1: f32,
+    pub t1: f64,
     pub curve1: CubicCurve,
-    pub t2: f32,
+    pub t2: f64,
     pub curve2: CubicCurve,
 }
 
@@ -51,26 +51,26 @@ pub enum CubicLineIntersection {
     Intersect1 {
         curve: CubicCurve,
         line: Line,
-        t_curve_1: f32,
-        t_line_1: f32,
+        t_curve_1: f64,
+        t_line_1: f64,
     },
     Intersect2 {
         curve: CubicCurve,
         line: Line,
-        t_curve_1: f32,
-        t_line_1: f32,
-        t_curve_2: f32,
-        t_line_2: f32,
+        t_curve_1: f64,
+        t_line_1: f64,
+        t_curve_2: f64,
+        t_line_2: f64,
     },
     Intersect3 {
         curve: CubicCurve,
         line: Line,
-        t_curve_1: f32,
-        t_line_1: f32,
-        t_curve_2: f32,
-        t_line_2: f32,
-        t_curve_3: f32,
-        t_line_3: f32,
+        t_curve_1: f64,
+        t_line_1: f64,
+        t_curve_2: f64,
+        t_line_2: f64,
+        t_curve_3: f64,
+        t_line_3: f64,
     }
 }
 
@@ -108,20 +108,20 @@ impl CubicLineIntersection {
 }
 
 #[inline]
-fn lerp(p1: Point, p2: Point, t: f32) -> Point {
+fn lerp(p1: Point, p2: Point, t: f64) -> Point {
     let new_x = (1.0 - t) * p1.x + t * p2.x;
     let new_y = (1.0 - t) * p1.y + t * p2.y;
     Point::new(new_x, new_y)
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
-pub struct BezierNormalVector { pub x: f32, pub y: f32 }
+pub struct BezierNormalVector { pub x: f64, pub y: f64 }
 
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
 pub struct LineLineIntersection {
-    pub t1: f32,
+    pub t1: f64,
     pub line1: Line,
-    pub t2: f32,
+    pub t2: f64,
     pub line2: Line,
 }
 
@@ -163,7 +163,7 @@ pub fn curve_curve_intersect(a: CubicCurve, b: CubicCurve) -> IntersectionResult
 }
 
 /// Calculates the normal vector at a certain point (perpendicular to the curve)
-pub fn cubic_bezier_normal(curve: CubicCurve, t: f32) -> BezierNormalVector {
+pub fn cubic_bezier_normal(curve: CubicCurve, t: f64) -> BezierNormalVector {
 
     // 1. Calculate the derivative of the bezier curve
     //
@@ -210,7 +210,7 @@ pub fn cubic_bezier_normal(curve: CubicCurve, t: f32) -> BezierNormalVector {
 }
 
 #[inline]
-pub fn quadratic_interpolate_bezier(curve: QuadraticCurve, t: f32) -> Point {
+pub fn quadratic_interpolate_bezier(curve: QuadraticCurve, t: f64) -> Point {
     let one_minus = 1.0 - t;
     let one_minus_square = one_minus.powi(2);
 
@@ -241,7 +241,7 @@ pub fn curve_line_intersect(
         Intersection::*,
     };
 
-    if b1 == b2 {
+    if b1 == b2 || (a1 == a2 && a2 == a3 && a3 == a4) {
         return NoIntersection;
     }
 
@@ -252,12 +252,12 @@ pub fn curve_line_intersect(
     let bx = bezier_coeffs(a1.x, a2.x, a3.x, a4.x);
     let by = bezier_coeffs(a1.y, a2.y, a3.y, a4.y);
 
-    let p_0 = A * bx.0 + B * by.0;     // t^3
-    let p_1 = A * bx.1 + B * by.1;     // t^2
-    let p_2 = A * bx.2 + B * by.2;     // t
-    let p_3 = A * bx.3 + B * by.3 + C; // 1
+    let p_0 = A * bx.0 as f64 + B * by.0 as f64;     // t^3
+    let p_1 = A * bx.1 as f64 + B * by.1 as f64;     // t^2
+    let p_2 = A * bx.2 as f64 + B * by.2 as f64;     // t
+    let p_3 = A * bx.3 as f64 + B * by.3 as f64 + C; // 1
 
-    let r = cubic_roots(p_0, p_1, p_2, p_3);
+    let r = cubic_roots(p_0 as f64, p_1 as f64, p_2 as f64, p_3 as f64);
 
     let mut intersections = (None, None, None);
 
@@ -284,7 +284,7 @@ pub fn curve_line_intersect(
             intersections.$index = if !t.is_sign_positive() || t > 1.0 || !t_line.is_sign_positive() || t_line > 1.0 {
                 None
             } else {
-                Some((t_line, t))
+                Some((t_line as f64, t as f64))
             }
         }
     })}
@@ -327,9 +327,11 @@ pub fn curve_line_intersect(
 
 // based on http://mysite.verizon.net/res148h4j/javascript/script_exact_cubic.html#the%20source%20code
 #[inline(always)]
-fn cubic_roots(a: f32, b: f32, c: f32, d: f32) -> (Option<f32>, Option<f32>, Option<f32>) {
+fn cubic_roots(a: f64, b: f64, c: f64, d: f64) -> (Option<f64>, Option<f64>, Option<f64>) {
 
-    use std::f32::consts::PI;
+    println!("a: {}, b: {}, c: {}, d: {}", a, b, c, d);
+
+    use std::f64::consts::PI;
 
     // special case for linear and quadratic case
     if is_zero(a) {
@@ -374,14 +376,21 @@ fn cubic_roots(a: f32, b: f32, c: f32, d: f32) -> (Option<f32>, Option<f32>, Opt
     let B = c / a;
     let C = d / a;
 
-    let Q = (3.0 * B - A.powi(2)) / 9.0;
-    let R = (9.0 * A * B - 27.0 * C - 2.0 * A.powi(3)) / 54.0;
-    let D = Q.powi(3) + R.powi(2); // polynomial discriminant
+    println!("A: {}, B: {}, C: {}", A, B, C);
+
+    let Q = (3.0 * B - (A*A)) / 9.0;
+    let R = (9.0 * A * B - 27.0 * C - 2.0 * (A*A*A)) / 54.0;
+    let D = Q*Q*Q + R*R; // polynomial discriminant
+
+    println!("Q: {}, R: {}, D: {}", Q, R, D);
+
+    // -38685626000000000000000000
+    println!("polynomial discriminant: {}", D);
 
     let ret = if D.is_sign_positive() {
 
         // complex or duplicate roots
-        const ONE_THIRD: f32 = 1.0 / 3.0;
+        const ONE_THIRD: f64 = 1.0 / 3.0;
 
         let D_sqrt = D.sqrt();
         let S = sign(R + D_sqrt) * (R + D_sqrt).abs().powf(ONE_THIRD);
@@ -397,7 +406,7 @@ fn cubic_roots(a: f32, b: f32, c: f32, d: f32) -> (Option<f32>, Option<f32>, Opt
             if !p.is_sign_positive() || p > 1.0 { None } else { Some(p) },
         );
 
-        let imaginary = (3.0_f32.sqrt() * (S - T) / 2.0).abs(); // complex part of root pair
+        let imaginary = (3.0_f64.sqrt() * (S - T) / 2.0).abs(); // complex part of root pair
 
         // discard complex roots
         if !is_zero(imaginary) {
@@ -430,12 +439,12 @@ fn cubic_roots(a: f32, b: f32, c: f32, d: f32) -> (Option<f32>, Option<f32>, Opt
 }
 
 #[inline]
-fn sign(a: f32) -> f32 {
+fn sign(a: f64) -> f64 {
     if a.is_sign_positive() { 1.0 } else { -1.0 }
 }
 
 #[inline]
-fn bezier_coeffs(a: f32, b: f32, c: f32, d: f32) -> (f32, f32, f32, f32) {
+fn bezier_coeffs(a: f64, b: f64, c: f64, d: f64) -> (f64, f64, f64, f64) {
     (
         -a + 3.0*b + -3.0*c + d,
         3.0*a - 6.0*b + 3.0*c,
@@ -444,7 +453,7 @@ fn bezier_coeffs(a: f32, b: f32, c: f32, d: f32) -> (f32, f32, f32, f32) {
     )
 }
 
-type OptionTuple = (Option<f32>, Option<f32>, Option<f32>);
+type OptionTuple = (Option<f64>, Option<f64>, Option<f64>);
 
 // Sort so that the None values are at the end
 #[inline]
@@ -548,7 +557,7 @@ pub fn line_line_intersect(
 // Convert a quadratic bezier into a cubic bezier
 #[inline]
 pub fn quadratic_to_cubic_curve(c: QuadraticCurve) -> CubicCurve {
-    const TWO_THIRDS: f32 = 2.0 / 3.0;
+    const TWO_THIRDS: f64 = 2.0 / 3.0;
 
     let c1_x = c.0.x + TWO_THIRDS * (c.1.x - c.0.x);
     let c1_y = c.0.y + TWO_THIRDS * (c.1.y - c.0.y);
@@ -565,17 +574,17 @@ pub fn quadratic_to_cubic_curve(c: QuadraticCurve) -> CubicCurve {
 ///
 /// https://github.com/paperjs/paper.js/
 
-const TOLERANCE:f32 = 1e-5;
-const EPSILON: f32 = 1e-10;
+const TOLERANCE:f64 = 1e-5;
+const EPSILON: f64 = 1e-10;
 
 #[inline]
-fn is_zero(val: f32) -> bool {
+fn is_zero(val: f64) -> bool {
   val.abs() <= EPSILON
 }
 
 /// Computes the signed distance of (x, y) between (px, py) and (vx, vy)
 #[inline]
-fn signed_distance(px: f32, py: f32, mut vx: f32, mut vy: f32, x: f32, y: f32) -> f32 {
+fn signed_distance(px: f64, py: f64, mut vx: f64, mut vy: f64, x: f64, y: f64) -> f64 {
     vx -= px;
     vy -= py;
     if is_zero(vx) {
@@ -600,7 +609,7 @@ fn signed_distance(px: f32, py: f32, mut vx: f32, mut vy: f32, x: f32, y: f32) -
 /// - TOP: The part that lies above the 'median' (line connecting end points of the curve)
 /// - BOTTOM: The part that lies below the median.
 #[inline]
-fn convex_hull(dq0: f32, dq1: f32, dq2: f32, dq3: f32) -> [Vec<[f32;2]>;2] {
+fn convex_hull(dq0: f64, dq1: f64, dq2: f64, dq3: f64) -> [Vec<[f64;2]>;2] {
 
     let p0 = [0.0, dq0];
     let p1 = [1.0 / 3.0, dq1];
@@ -664,7 +673,7 @@ fn convex_hull(dq0: f32, dq1: f32, dq2: f32, dq3: f32) -> [Vec<[f32;2]>;2] {
 
 /// Clips the convex-hull and returns [tMin, tMax] for the curve contained.
 #[inline]
-fn clip_convex_hull(hullTop: &[[f32;2]], hullBottom: &[[f32;2]], dMin: f32, dMax: f32) -> Option<f32> {
+fn clip_convex_hull(hullTop: &[[f64;2]], hullBottom: &[[f64;2]], dMin: f64, dMax: f64) -> Option<f64> {
     if hullTop[0][1] < dMin {
         // Left of hull is below dMin, walk through the hull until it
         // enters the region between dMin and dMax
@@ -680,7 +689,7 @@ fn clip_convex_hull(hullTop: &[[f32;2]], hullBottom: &[[f32;2]], dMin: f32, dMax
 }
 
 #[inline]
-fn clip_convex_hull_part(part: &[[f32;2]], top: bool, threshold: f32) -> Option<f32> {
+fn clip_convex_hull_part(part: &[[f64;2]], top: bool, threshold: f64) -> Option<f64> {
     let mut pxpy = part[0];
 
     for [qx, qy] in part.iter().copied() {
@@ -699,22 +708,22 @@ fn clip_convex_hull_part(part: &[[f32;2]], top: bool, threshold: f32) -> Option<
 /// Calculates the fat line of a curve and returns the maximum and minimum offset widths
 /// for the fatline of a curve
 #[inline]
-fn get_fatline((p0, p1, p2, p3): CubicCurve) -> (f32, f32) {
+fn get_fatline((p0, p1, p2, p3): CubicCurve) -> (f64, f64) {
 
     // Calculate the fat-line L, for Q is the baseline l and two
     // offsets which completely encloses the curve P.
     let d1 = signed_distance(p0.x, p0.y, p3.x, p3.y, p1.x, p1.y);
     let d2 = signed_distance(p0.x, p0.y, p3.x, p3.y, p2.x, p2.y);
     let factor = if (d1 * d2).is_sign_positive() { 3.0 / 4.0 } else { 4.0 / 9.0 }; // Get a tighter fit
-    let dMin = factor * 0.0_f32.min(d1).min(d2);
-    let dMax = factor * 0.0_f32.max(d1).max(d2);
+    let dMin = factor * 0.0_f64.min(d1).min(d2);
+    let dMax = factor * 0.0_f64.max(d1).max(d2);
 
     // The width of the 'fatline' is |dMin| + |dMax|
     (dMin, dMax)
 }
 
 #[inline]
-fn subdivide((p1, c1, c2, p2): CubicCurve, t: f32) -> (CubicCurve, CubicCurve) {
+fn subdivide((p1, c1, c2, p2): CubicCurve, t: f64) -> (CubicCurve, CubicCurve) {
 
     // Triangle computation, with loops unrolled.
     let u = 1.0 - t;
@@ -746,7 +755,7 @@ fn subdivide((p1, c1, c2, p2): CubicCurve, t: f32) -> (CubicCurve, CubicCurve) {
 
 /// Returns the part of a curve between t1 and t2
 #[inline]
-fn get_part(mut v: CubicCurve, t1: f32, t2: f32) -> CubicCurve {
+fn get_part(mut v: CubicCurve, t1: f64, t2: f64) -> CubicCurve {
 
     if t1.is_sign_positive() {
         v = subdivide(v, t1).1; // right
@@ -762,7 +771,7 @@ fn get_part(mut v: CubicCurve, t1: f32, t2: f32) -> CubicCurve {
 
 /// Calculates the coordinates of the point on a bezier curve at a given t
 #[inline]
-fn evaluate((p1, c1, c2, p2): CubicCurve, t: f32) -> Point {
+fn evaluate((p1, c1, c2, p2): CubicCurve, t: f64) -> Point {
 
   // Handle special case at beginning / end of curve
   if t < TOLERANCE || t > (1.0 - TOLERANCE) {
@@ -793,15 +802,15 @@ fn evaluate((p1, c1, c2, p2): CubicCurve, t: f32) -> Point {
 fn curve_intersections_inner(
     mut v1: CubicCurve,
     v2: CubicCurve,
-    tMin: f32,
-    tMax: f32,
-    uMin: f32,
-    uMax: f32,
-    oldTDiff: f32,
+    tMin: f64,
+    tMax: f64,
+    uMin: f64,
+    uMax: f64,
+    oldTDiff: f64,
     reverse: bool,
     recursion: usize,
     recursionLimit: usize,
-    tLimit: f32
+    tLimit: f64
 ) -> Vec<CubicCubicIntersection> {
 
     // Avoid deeper recursion.
