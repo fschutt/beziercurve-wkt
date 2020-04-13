@@ -83,6 +83,7 @@ impl Point {
     /// Parses a `Point` from a str
     ///
     /// ```rust
+    /// # use beziercurve_wkt::Point;
     /// let s = "5.0 7.0";
     /// let parsed = Point::from_str(s).unwrap();
     /// assert_eq!(parsed, Point { x: 5.0, y: 7.0 });
@@ -193,19 +194,21 @@ impl BezierCurveItem {
     pub fn get_last_point(&self) -> Point {
         use self::BezierCurveItem::*;
         match self {
-            Line((p_start, _)) => *p_start,
-            QuadraticCurve((p_start, _, _)) => *p_start,
-            CubicCurve((p_start, _, _, _)) => *p_start,
+            Line((_, p_end)) => *p_end,
+            QuadraticCurve((_, _, p_end)) => *p_end,
+            CubicCurve((_, _, _, p_end)) => *p_end,
         }
     }
 
     /// Parses the `BezierCurveItem` from a string
     ///
     /// ```rust
-    /// let s1 = "(0.0 1.0, 2.0 1.0)";
-    /// let parsed = BezierCurveItem::from_str(s1).unwrap();
+    /// # use beziercurve_wkt::{BezierCurveItem, BezierCurveItem::*, Point};
+    /// let parsed1 = BezierCurveItem::from_str("(0.0 1.0, 2.0 1.0)").unwrap();
+    /// assert_eq!(parsed1, Line((Point { x: 0.0, y: 1.0 }, Point { x: 2.0, y: 1.0 })));
     ///
-    /// assert_eq!(parsed, BezierCurveItem::Line((Point { x:) 0.0, y: 1.0 }, Point { x: 2.0, y: 1.0 }));
+    /// let parsed2 = BezierCurveItem::from_str("(0.0 1.0, 2.0 1.0, 3.0 4.0)").unwrap();
+    /// assert_eq!(parsed2, QuadraticCurve((Point { x: 0.0, y: 1.0 }, Point { x: 2.0, y: 1.0 }, Point { x: 3.0, y: 4.0 })));
     /// ```
     pub fn from_str(s: &str) -> Result<Self, ParseError> {
         use self::BezierCurveItem::*;
@@ -371,13 +374,14 @@ impl BezierCurve {
     /// Parses a `BezierCurve` from a str
     ///
     /// ```rust
-    /// let s = "BEZIERCURVE((0.0 1.0, 2.0 1.0), (2.0 1.0, 0.0 0.0), (0.0 0.0, 2.0 1.0))";
+    /// # use beziercurve_wkt::{BezierCurve, BezierCurveItem, Point};
+    /// let s = "BEZIERCURVE((0.0 1.0, 2.0 1.0), (2.0 1.0, 3.0 4.0, 0.0 0.0), (0.0 0.0, 0.0 1.0))";
     /// let parsed_curve = BezierCurve::from_str(s).unwrap();
     ///
     /// assert_eq!(parsed_curve, BezierCurve { items: vec![
-    ///      BezierCurveItem::Line((Point { x: 0.0, y: 1.0 }, Point { x: 2.0, y: 1.0 }),
-    ///      BezierCurveItem::Line((Point { x: 2.0, y: 1.0 }, Point { x: 0.0, y: 0.0 }),
-    ///      BezierCurveItem::Line((Point { x: 0.0, y: 0.0 }, Point { x: 2.0, y: 1.0 }),
+    ///      BezierCurveItem::Line((Point { x: 0.0, y: 1.0 }, Point { x: 2.0, y: 1.0 })),
+    ///      BezierCurveItem::QuadraticCurve((Point { x: 2.0, y: 1.0 }, Point { x: 3.0, y: 4.0 }, Point { x: 0.0, y: 0.0 })),
+    ///      BezierCurveItem::Line((Point { x: 0.0, y: 0.0 }, Point { x: 0.0, y: 1.0 })),
     /// ]});
     ///
     /// assert!(parsed_curve.is_closed());
@@ -390,15 +394,19 @@ impl BezierCurve {
             return Err(NoEnclosingBezierCurve);
         }
 
-        let mut s = &s[12..s.len() - 2];
+        let mut s = &s[12..s.len() - 1];
         let mut items = Vec::new();
         let mut last_point = None;
 
         while let Some((characters_to_skip, character_was_found)) = skip_next_braces(&s, ',') {
             let next_item = if character_was_found { &s[..characters_to_skip] } else { &s[..] };
-            let bezier_curve_item = BezierCurveItem::from_str(next_item).map_err(|e| FailedToParseItem(e, items.len()))?;
+            let bezier_curve_item =
+                BezierCurveItem::from_str(next_item)
+                .map_err(|e| FailedToParseItem(e, items.len()))?;
+
             if let Some(last) = last_point {
                 if bezier_curve_item.get_first_point() != last {
+                    println!("last point: {:?}, current point {:?}", last, bezier_curve_item.get_first_point());
                     return Err(BrokenBezierCurve(items.len()));
                 }
             }
@@ -516,7 +524,7 @@ impl BezierCurveCache {
     #[cfg(not(feature = "parallel"))]
     #[inline]
     pub fn get_intersections(&self, curve: &Self) -> Vec<(CurveIndex, Intersection)> {
-        if !self.get_bbox().overlaps(curve.get_bbox()) {
+        if curve.curve.items.is_empty() || !self.get_bbox().overlaps(curve.get_bbox()) {
             return DEFAULT_VEC;
         }
 
@@ -529,7 +537,7 @@ impl BezierCurveCache {
     #[cfg(feature = "parallel")]
     #[inline]
     pub fn get_intersections(&self, curve: &Self) -> Vec<(CurveIndex, Intersection)> {
-        if !self.get_bbox().overlaps(curve.get_bbox()) {
+        if curve.curve.items.is_empty() || !self.get_bbox().overlaps(curve.get_bbox()) {
             return DEFAULT_VEC;
         }
 
