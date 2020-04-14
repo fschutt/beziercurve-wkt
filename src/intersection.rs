@@ -246,6 +246,34 @@ pub fn curve_line_intersect(
         return NoIntersection;
     }
 
+    let original_a1 = a1;
+    let original_a2 = a2;
+    let original_a3 = a3;
+    let original_a4 = a4;
+    let original_b1 = b1;
+    let original_b2 = b2;
+
+    // If the numbers are below 10.0, the algorithm has
+    // problems with precision, multiply by 100
+    // also, round to 3 decimals to avoid precision issues
+    let numbers = [a1.x, a1.y, a2.x, a2.y, a3.x, a3.y, a4.x, a4.y, b1.x, b1.y, b2.x, b2.y];
+    let mut lowest_number = 0.0_f64;
+    for n in &numbers { lowest_number = lowest_number.min(*n); }
+    let smallest_number_abs = lowest_number.abs();
+    let multiplier = if smallest_number_abs != 0.0 { 100.0 / smallest_number_abs } else { 100.0 };
+
+    let a1 = Point::new(round_3(a1.x * multiplier), round_3(a1.y * multiplier));
+    let a2 = Point::new(round_3(a2.x * multiplier), round_3(a2.y * multiplier));
+    let a3 = Point::new(round_3(a3.x * multiplier), round_3(a3.y * multiplier));
+    let a4 = Point::new(round_3(a4.x * multiplier), round_3(a4.y * multiplier));
+    let b1 = Point::new(round_3(b1.x * multiplier), round_3(b1.y * multiplier));
+    let b2 = Point::new(round_3(b2.x * multiplier), round_3(b2.y * multiplier));
+
+    #[inline]
+    fn round_3(input: f64) -> f64 {
+        ((input * 1000.0_f64) as u64) as f64 / 1000.0_f64
+    }
+
     let A = b2.y - b1.y; // A = y2 - y1
     let B = b1.x - b2.x; // B = x1 - x2
     let C = b1.x * (b1.y - b2.y) + b1.y * (b2.x - b1.x); // C = x1*(y1-y2)+y1*(x2-x1)
@@ -297,15 +325,15 @@ pub fn curve_line_intersect(
     match intersections {
         (Some((t_line_1, t_curve_1)), None, None) =>
             FoundIntersection(CubicLine(Intersect1 {
-                curve: (a1, a2, a3, a4),
-                line: (b1, b2),
+                curve: (original_a1, original_a2, original_a3, original_a4),
+                line: (original_b1, original_b2),
                 t_curve_1,
                 t_line_1,
             })),
         (Some((t_line_1, t_curve_1)), Some((t_line_2, t_curve_2)), None) =>
             FoundIntersection(CubicLine(Intersect2 {
-                curve: (a1, a2, a3, a4),
-                line: (b1, b2),
+                curve: (original_a1, original_a2, original_a3, original_a4),
+                line: (original_b1, original_b2),
                 t_curve_1,
                 t_line_1,
                 t_curve_2,
@@ -313,8 +341,8 @@ pub fn curve_line_intersect(
             })),
         (Some((t_line_1, t_curve_1)), Some((t_line_2, t_curve_2)), Some((t_line_3, t_curve_3))) =>
             FoundIntersection(CubicLine(Intersect3 {
-                curve: (a1, a2, a3, a4),
-                line: (b1, b2),
+                curve: (original_a1, original_a2, original_a3, original_a4),
+                line: (original_b1, original_b2),
                 t_curve_1,
                 t_line_1,
                 t_curve_2,
@@ -349,8 +377,8 @@ fn cubic_roots(a: f64, b: f64, c: f64, d: f64) -> (Option<f64>, Option<f64>, Opt
 
            return ret;
         } else {
-           // quadratic discriminant
-           let d_q = c.powi(2) + 4.0 * b * d;
+            // quadratic discriminant
+            let d_q = c.powi(2) - 4.0 * b * d;
 
             if d_q.is_sign_positive() {
                 let d_q = d_q.sqrt();

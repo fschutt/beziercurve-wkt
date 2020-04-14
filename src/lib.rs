@@ -64,12 +64,18 @@ pub type Line           = (Point, Point);
 pub type QuadraticCurve = (Point, Point, Point);
 pub type CubicCurve     = (Point, Point, Point, Point);
 
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
+#[derive(Copy, Clone, PartialEq, PartialOrd)]
 pub struct Point { pub x: f64, pub y: f64 }
 
 impl fmt::Display for Point {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{} {}", self.x, self.y)
+    }
+}
+
+impl fmt::Debug for Point {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self)
     }
 }
 
@@ -103,7 +109,7 @@ impl Point {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
+#[derive(Copy, Clone, PartialEq, PartialOrd)]
 pub struct Bbox {
     pub max_x: f64,
     pub max_y: f64,
@@ -114,6 +120,12 @@ pub struct Bbox {
 impl fmt::Display for Bbox {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "[x: {} - {}, y: {} - {}]", self.max_x, self.min_x, self.max_y, self.min_y)
+    }
+}
+
+impl fmt::Debug for Bbox {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self)
     }
 }
 
@@ -135,7 +147,7 @@ impl Bbox {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
+#[derive(Copy, Clone, PartialEq, PartialOrd)]
 pub enum BezierCurveItem {
     Line(Line),
     QuadraticCurve(QuadraticCurve),
@@ -150,6 +162,12 @@ impl fmt::Display for BezierCurveItem {
             QuadraticCurve((p_start, control_1, p_end)) => write!(f, "({}, {}, {})", p_start, control_1, p_end),
             CubicCurve((p_start, control_1, control_2, p_end)) => write!(f, "({}, {}, {}, {})", p_start, control_1, control_2, p_end),
         }
+    }
+}
+
+impl fmt::Debug for BezierCurveItem {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self)
     }
 }
 
@@ -406,7 +424,6 @@ impl BezierCurve {
 
             if let Some(last) = last_point {
                 if bezier_curve_item.get_first_point() != last {
-                    println!("last point: {:?}, current point {:?}", last, bezier_curve_item.get_first_point());
                     return Err(BrokenBezierCurve(items.len()));
                 }
             }
@@ -594,13 +611,7 @@ impl BezierCurveCache {
             return DEFAULT_VEC;
         }
 
-        println!("curve quadtree: {:#?}", self.quad_tree);
-        println!("curve bbox: {:#?}", self.quad_tree.bbox());
-        println!("line bbox: {:#?}", curve.get_bbox());
-
         let curve_part_ids = self.quad_tree.get_ids_that_overlap(&curve_bbox);
-
-        println!("curve_part_ids: {:?}!", curve_part_ids);
 
         curve_part_ids
         .iter()
