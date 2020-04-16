@@ -29,5 +29,7 @@ fn main() {
     let clipped = curve1.clip(&curve2);
     for new_curve in clipped {
         println!("{}", new_curve);
+        println!("{:#?}", new_curve.get_commands());
+        println!("----");
     }
 }

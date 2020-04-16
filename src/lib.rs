@@ -382,6 +382,14 @@ impl From<ParseFloatError> for ParseError {
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub enum BezierCommand {
+    MoveTo(Point),
+    LineTo(Point),
+    BezierCurveTo(Point, Point),
+    CubicCurveTo(Point, Point, Point),
+}
+
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub struct BezierCurve {
     pub items: Vec<BezierCurveItem>,
 }
@@ -477,6 +485,64 @@ impl BezierCurve {
     /// Builds a quadtree-based cache from the current bezier curve
     pub fn cache(self) -> BezierCurveCache {
         BezierCurveCache::new(self)
+    }
+
+    /// Turn the line into a SVG-esque sequence of "moveto x y, lineto x y"
+    #[cfg(feature = "parallel")]
+    pub fn get_commands(&self) -> Vec<BezierCommand> {
+        use self::BezierCommand::*;
+        use self::BezierCurveItem::*;
+
+        if self.items.is_empty() { return Vec::new(); }
+
+        let mut items = self.items
+        .par_iter()
+        .map(|item| match item {
+            Line((_, p1)) => LineTo(*p1),
+            QuadraticCurve((_, p1, p2)) => BezierCurveTo(*p1, *p2),
+            CubicCurve((_, p1, p2, p3)) => CubicCurveTo(*p1, *p2, *p3),
+        }).collect::<Vec<_>>();
+
+        // push MoveTo
+        items.push(match self.items[0] {
+            Line((p0, _)) => MoveTo(p0),
+            QuadraticCurve((p0, _, _)) => MoveTo(p0),
+            CubicCurve((p0, _, _, _)) => MoveTo(p0),
+        });
+
+        // rotate, so that the MoveTo is in front
+        items.rotate_left(1);
+
+        items
+    }
+
+    /// Turn the line into a SVG-esque sequence of "moveto x y, lineto x y"
+    #[cfg(not(feature = "parallel"))]
+    pub fn get_commands(&self) -> Vec<BezierCommand> {
+        use self::BezierCommand::*;
+        use self::BezierCurveItem::*;
+
+        if self.items.is_empty() { return Vec::new(); }
+
+        let mut items = self.items
+        .iter()
+        .map(|item| match item {
+            Line((_, p1)) => LineTo(*p1),
+            QuadraticCurve((_, p1, p2)) => BezierCurveTo(*p1, *p2),
+            CubicCurve((_, p1, p2, p3)) => CubicCurveTo(*p1, *p2, *p3),
+        }).collect::<Vec<_>>();
+
+        // push MoveTo
+        items.push(match self.items[0] {
+            Line((p0, _)) => MoveTo(p0),
+            QuadraticCurve((p0, _, _)) => MoveTo(p0),
+            CubicCurve((p0, _, _, _)) => MoveTo(p0),
+        });
+
+        // rotate, so that the MoveTo is in front
+        items.rotate_left(1);
+
+        items
     }
 }
 
