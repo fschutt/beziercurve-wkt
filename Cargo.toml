@@ -7,7 +7,7 @@ repository = "https://github.com/fschutt/beziercurve-wkt"
 homepage = "https://github.com/fschutt/beziercurve-wkt"
 license = "MIT"
 readme = "README.md"
-description = "Serialize / deserialize bezier curves to / from a string"
+description = "Serialize / deserialize bezier curves to / from a WKT-like string + do clipping operations"
 
 [dependencies]
 quadtree-f32 = "0.2.2"
