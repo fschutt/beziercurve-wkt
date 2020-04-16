@@ -285,23 +285,23 @@ impl BezierCurveItem {
         // Preliminary test if the bounding boxes overlap
         let self_bbox = translate_bbox(self.get_bbox());
         let curve_bbox = translate_bbox(curve.get_bbox());
+
         if !self_bbox.overlaps_rect(&curve_bbox) {
             return IntersectionResult::NoIntersection;
         }
 
         match (self, curve) {
             (Line(l1), Line(l2))                     => line_line_intersect(*l1, *l2),
-            (QuadraticCurve(q1), QuadraticCurve(q2)) => curve_curve_intersect(quadratic_to_cubic_curve(*q1), quadratic_to_cubic_curve(*q2)),
-            (CubicCurve(c1), CubicCurve(c2))         => curve_curve_intersect(*c1, *c2),
+            (Line(l1), QuadraticCurve(q1))           => line_quad_intersect(*l1, *q1),
+            (Line(l1), CubicCurve(c1))               => line_cubic_intersect(*l1, *c1),
 
-            (Line(l1), QuadraticCurve(q1))           => curve_line_intersect(quadratic_to_cubic_curve(*q1), *l1),
-            (Line(l1), CubicCurve(c1))               => curve_line_intersect(*c1, *l1),
+            (QuadraticCurve(q1), Line(l1))           => quad_line_intersect(*q1, *l1),
+            (QuadraticCurve(q1), QuadraticCurve(q2)) => quad_quad_intersect(*q1, *q2),
+            (QuadraticCurve(q1), CubicCurve(c1))     => quad_cubic_intersect(*q1, *c1),
 
-            (QuadraticCurve(q1), Line(l1))           => curve_line_intersect(quadratic_to_cubic_curve(*q1), *l1),
-            (QuadraticCurve(q1), CubicCurve(c1))     => curve_curve_intersect(quadratic_to_cubic_curve(*q1), *c1),
-
-            (CubicCurve(c1), Line(l1))               => curve_line_intersect(*c1, *l1),
-            (CubicCurve(c1), QuadraticCurve(q1))     => curve_curve_intersect(*c1, quadratic_to_cubic_curve(*q1)),
+            (CubicCurve(c1), Line(l1))               => cubic_line_intersect(*c1, *l1),
+            (CubicCurve(c1), QuadraticCurve(q1))     => cubic_quad_intersect(*c1, *q1),
+            (CubicCurve(c1), CubicCurve(c2))         => cubic_cubic_intersect(*c1, *c2),
         }
     }
 
@@ -310,19 +310,29 @@ impl BezierCurveItem {
         use self::BezierCurveItem::*;
         use crate::intersection::*;
         match self {
-            Line(l) => {
-                // calculate the rise / run, then simply
-                // inverse the axis to rotate by 90 degrees
-                let diff_x = l.1.x - l.0.x;
-                let diff_y = l.1.y - l.0.y;
-                let line_length = (diff_x.powi(2) + diff_y.powi(2)).sqrt();
-                BezierNormalVector {
-                    x: -diff_y / line_length,
-                    y: diff_x / line_length,
-                }
-            },
-            QuadraticCurve(q) => cubic_bezier_normal(quadratic_to_cubic_curve(*q), t),
+            Line(l) => line_normal(*l, t),
+            QuadraticCurve(q) => quadratic_bezier_normal(*q, t),
             CubicCurve(c) => cubic_bezier_normal(*c, t),
+        }
+    }
+
+    /// Splits the curve / line into two curves / lines
+    pub fn split_at(&self, t: f64) -> (Self, Self) {
+        use self::BezierCurveItem::*;
+        use crate::intersection::*;
+        match self {
+            Line(l) => {
+                let (l1, l2) = split_line(*l, t);
+                (Line(l1), Line(l2))
+            },
+            QuadraticCurve(q) => {
+                let (q1, q2) = split_quad(*q, t);
+                (QuadraticCurve(q1), QuadraticCurve(q2))
+            },
+            CubicCurve(c) => {
+                let (c1, c2) = split_cubic(*c, t);
+                (CubicCurve(c1), CubicCurve(c2))
+            },
         }
     }
 }
@@ -625,6 +635,119 @@ impl BezierCurveCache {
             FoundIntersection(i) => Some((id, i))
         })
         .collect()
+    }
+
+    /// Clips the beziercurve with another item, returns a list of new bezier curves
+    pub fn clip(&self, other: &Self) -> Vec<BezierCurve> {
+
+        use crate::intersection::Intersection::*;
+        use std::collections::BTreeMap;
+
+        let mut intersections = self.get_intersections(other);
+
+        intersections.sort_by(|a, b| a.0.cmp(&b.0));
+
+        // compile the curve index + the t of the self.curve into a list of (curve_index, t_value)
+        let intersections = intersections.into_iter().map(|(curve_index, i)| {
+
+            const PRECISION: f64 = 1000.0;
+
+            let mut intersections_new = match i {
+                LineLine(lli) => {
+                    vec![(lli.t1 * PRECISION) as usize]
+                },
+                LineQuad(lqi) => {
+                    let mut v = Vec::new();
+                    v.push((lqi.get_line_t1() * PRECISION) as usize);
+                    if let Some(t2) = lqi.get_line_t2() { v.push((t2 * PRECISION) as usize); }
+                    if let Some(t3) = lqi.get_line_t3() { v.push((t3 * PRECISION) as usize); }
+                    v
+                },
+                LineCubic(lci) => {
+                    let mut v = Vec::new();
+                    v.push((lci.get_line_t1() * PRECISION) as usize);
+                    if let Some(t2) = lci.get_line_t2() { v.push((t2 * PRECISION) as usize); }
+                    if let Some(t3) = lci.get_line_t3() { v.push((t3 * PRECISION) as usize); }
+                    v
+                },
+                QuadLine(qli) => {
+                    let mut v = Vec::new();
+                    v.push((qli.get_line_t1() * PRECISION) as usize);
+                    if let Some(t2) = qli.get_line_t2() { v.push((t2 * PRECISION) as usize); }
+                    if let Some(t3) = qli.get_line_t3() { v.push((t3 * PRECISION) as usize); }
+                    v
+                },
+                QuadQuad(i) => {
+                    i.into_iter().map(|ci| (ci.t1 * PRECISION) as usize).collect()
+                },
+                QuadCubic(i) => {
+                    i.into_iter().map(|ci| (ci.t1 * PRECISION) as usize).collect()
+                },
+                CubicLine(cli) => {
+                    let mut v = Vec::new();
+                    v.push((cli.get_line_t1() * PRECISION) as usize);
+                    if let Some(t2) = cli.get_line_t2() { v.push((t2 * PRECISION) as usize); }
+                    if let Some(t3) = cli.get_line_t3() { v.push((t3 * PRECISION) as usize); }
+                    v
+                },
+                CubicQuad(i) => {
+                    i.into_iter().map(|ci| (ci.t1 * PRECISION) as usize).collect()
+                },
+                CubicCubic(i) => {
+                    i.into_iter().map(|ci| (ci.t1 * PRECISION) as usize).collect()
+                },
+            };
+
+            // sort them by the t value
+            intersections_new.sort();
+
+            let intersections_new = intersections_new
+                .into_iter()
+                .map(|i| i as f64 / PRECISION as f64)
+                .collect();
+
+            (curve_index, intersections_new)
+
+        }).collect::<BTreeMap<CurveIndex, Vec<f64>>>();
+
+        let mut bezier_curves = Vec::new();
+        let mut current_bezier_curve = Vec::new();
+        let mut ignore_line = false;
+
+        // go around the clip and for each intersection, split the line at t
+        // then flip-flop on whether to include (0.0..clip) or (clip..1.0)
+        for (curve_index, item) in self.curve.items.iter().enumerate() {
+            match intersections.get(&CurveIndex(curve_index)) {
+                None => {
+                    if !ignore_line {
+                        current_bezier_curve.push(*item);
+                    }
+                },
+                Some(vec_intersections) => {
+                    for t in vec_intersections {
+                        let (new_curve_a, new_curve_b) = item.split_at(*t);
+
+                        if ignore_line {
+                            // skip a, use b
+                            current_bezier_curve.push(new_curve_b);
+                        } else {
+                            // skip b, end the line and push it
+                            current_bezier_curve.push(new_curve_a);
+                            bezier_curves.push(BezierCurve { items: current_bezier_curve.clone() });
+                            current_bezier_curve.clear();
+                        }
+
+                        ignore_line = !ignore_line;
+                    }
+                }
+            }
+        }
+
+        if !current_bezier_curve.is_empty() {
+            bezier_curves.push(BezierCurve { items: current_bezier_curve });
+        }
+
+        bezier_curves
     }
 }
 

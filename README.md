@@ -32,9 +32,6 @@ is so that the BezierCurve can be constructed in parallel, if necessary.
 Additional to serialization / deserialization, this library features tools to:
 
 - calculate the bounding box of a curve (necessary for calculating intersection of curves using a quadtree)
-
-## Work in progress
-
 - calculate intersection(s) between curve-curve and curve-line
 - calculate the angles of intersections (necessary for ex. to put texts on curves)
 - cutting curves

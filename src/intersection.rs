@@ -4,21 +4,10 @@
 
 use crate::{Point, Line, QuadraticCurve, CubicCurve};
 
-/// When two curves are the same, they have infinite intersections
-/// Currently, this is treated the same as having no intersections
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
-pub enum InfiniteIntersections {
-    CubicCubic(CubicCurve, CubicCurve),
-    CubicLine(CubicCurve, Line),
-    LineLine(Line, Line),
-}
+type OptionTuple<T> = (Option<T>, Option<T>, Option<T>);
 
-#[derive(Debug, Clone, PartialEq, PartialOrd)]
-pub enum Intersection {
-    LineLine(LineLineIntersection),
-    CubicLine(CubicLineIntersection),
-    CubicCubic(Vec<CubicCubicIntersection>),
-}
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
+pub struct BezierNormalVector { pub x: f64, pub y: f64 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub enum IntersectionResult {
@@ -27,95 +16,29 @@ pub enum IntersectionResult {
     Infinite(InfiniteIntersections)
 }
 
+#[derive(Debug, Clone, PartialEq, PartialOrd)]
+pub enum Intersection {
+    LineLine(LineLineIntersection),
+    LineQuad(LineQuadIntersection),
+    LineCubic(LineCubicIntersection),
+    QuadLine(QuadLineIntersection),
+    QuadQuad(Vec<QuadQuadIntersection>),
+    QuadCubic(Vec<QuadCubicIntersection>),
+    CubicLine(CubicLineIntersection),
+    CubicQuad(Vec<CubicQuadIntersection>),
+    CubicCubic(Vec<CubicCubicIntersection>),
+}
+
+/// When two curves are the same, they have infinite intersections
+/// Currently, this is treated the same as having no intersections
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
-pub struct CubicCubicIntersection {
-    pub t1: f64,
-    pub curve1: CubicCurve,
-    pub t2: f64,
-    pub curve2: CubicCurve,
+pub enum InfiniteIntersections {
+    LineLine(Line, Line),
+    QuadQuad(QuadraticCurve, QuadraticCurve),
+    QuadCubic(QuadraticCurve, CubicCurve),
+    CubicQuad(CubicCurve, QuadraticCurve),
+    CubicCubic(CubicCurve, CubicCurve),
 }
-
-impl CubicCubicIntersection {
-    pub fn get_intersection_point_1(&self) -> Point {
-        evaluate(self.curve1, self.t1)
-    }
-
-    pub fn get_intersection_point_2(&self) -> Point {
-        evaluate(self.curve2, self.t2)
-    }
-}
-
-// A line-curve intersection can intersect in up to 3 points
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
-pub enum CubicLineIntersection {
-    Intersect1 {
-        curve: CubicCurve,
-        line: Line,
-        t_curve_1: f64,
-        t_line_1: f64,
-    },
-    Intersect2 {
-        curve: CubicCurve,
-        line: Line,
-        t_curve_1: f64,
-        t_line_1: f64,
-        t_curve_2: f64,
-        t_line_2: f64,
-    },
-    Intersect3 {
-        curve: CubicCurve,
-        line: Line,
-        t_curve_1: f64,
-        t_line_1: f64,
-        t_curve_2: f64,
-        t_line_2: f64,
-        t_curve_3: f64,
-        t_line_3: f64,
-    }
-}
-
-impl CubicLineIntersection {
-
-    #[inline]
-    pub fn get_intersection_point_1(&self) -> Point {
-        use self::CubicLineIntersection::*;
-        match self {
-            Intersect1 { line, t_line_1, .. } => lerp(line.0, line.1, *t_line_1),
-            Intersect2 { line, t_line_1, .. } => lerp(line.0, line.1, *t_line_1),
-            Intersect3 { line, t_line_1, .. } => lerp(line.0, line.1, *t_line_1),
-        }
-    }
-
-    #[inline]
-    pub fn get_intersection_point_2(&self) -> Option<Point> {
-        use self::CubicLineIntersection::*;
-        match self {
-            Intersect1 { .. } => None,
-            Intersect2 { line, t_line_2, .. } => Some(lerp(line.0, line.1, *t_line_2)),
-            Intersect3 { line, t_line_2, .. } => Some(lerp(line.0, line.1, *t_line_2)),
-        }
-    }
-
-    #[inline]
-    pub fn get_intersection_point_3(&self) -> Option<Point> {
-        use self::CubicLineIntersection::*;
-        match self {
-            Intersect1 { .. } => None,
-            Intersect2 { .. } => None,
-            Intersect3 { line, t_line_3, .. } => Some(lerp(line.0, line.1, *t_line_3)),
-        }
-    }
-}
-
-#[inline]
-fn lerp(p1: Point, p2: Point, t: f64) -> Point {
-    let new_x = (1.0 - t) * p1.x + t * p2.x;
-    let new_y = (1.0 - t) * p1.y + t * p2.y;
-    Point::new(new_x, new_y)
-}
-
-#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
-pub struct BezierNormalVector { pub x: f64, pub y: f64 }
 
 #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
 pub struct LineLineIntersection {
@@ -144,114 +67,559 @@ impl LineLineIntersection {
     }
 }
 
-// Intersect a quadratic with another quadratic curve
-pub fn curve_curve_intersect(a: CubicCurve, b: CubicCurve) -> IntersectionResult {
-
-    use self::IntersectionResult::*;
-
-    if a == b {
-        return Infinite(InfiniteIntersections::CubicCubic(a, b));
+macro_rules! cubic_line {($structname:ident, $curvetype:ident) => (
+    // A line-curve intersection can intersect in up to 3 points
+    #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
+    pub enum $structname {
+        Intersect1 {
+            curve: $curvetype,
+            line: Line,
+            t_curve_1: f64,
+            t_line_1: f64,
+        },
+        Intersect2 {
+            curve: $curvetype,
+            line: Line,
+            t_curve_1: f64,
+            t_line_1: f64,
+            t_curve_2: f64,
+            t_line_2: f64,
+        },
+        Intersect3 {
+            curve: $curvetype,
+            line: Line,
+            t_curve_1: f64,
+            t_line_1: f64,
+            t_curve_2: f64,
+            t_line_2: f64,
+            t_curve_3: f64,
+            t_line_3: f64,
+        }
     }
 
-    let intersections = curve_intersections_inner(a, b, 0.0, 1.0, 0.0, 1.0, 1.0, false, 0, 32, 0.8);
+    impl $structname {
 
-    if intersections.is_empty() {
-        NoIntersection
-    } else {
-        FoundIntersection(Intersection::CubicCubic(intersections))
+        #[inline]
+        pub fn get_curve_t1(&self) -> f64 {
+            use self::$structname::*;
+            match self {
+                Intersect1 { t_curve_1, .. } => *t_curve_1,
+                Intersect2 { t_curve_1, .. } => *t_curve_1,
+                Intersect3 { t_curve_1, .. } => *t_curve_1,
+            }
+        }
+
+        #[inline]
+        pub fn get_curve_t2(&self) -> Option<f64> {
+            use self::$structname::*;
+            match self {
+                Intersect1 { .. } => None,
+                Intersect2 { t_curve_2, .. } => Some(*t_curve_2),
+                Intersect3 { t_curve_2, .. } => Some(*t_curve_2),
+            }
+        }
+
+        #[inline]
+        pub fn get_curve_t3(&self) -> Option<f64> {
+            use self::$structname::*;
+            match self {
+                Intersect1 { .. } => None,
+                Intersect2 { .. } => None,
+                Intersect3 { t_curve_3, .. } => Some(*t_curve_3),
+            }
+        }
+
+        #[inline]
+        pub fn get_line_t1(&self) -> f64 {
+            use self::$structname::*;
+            match self {
+                Intersect1 { t_line_1, .. } => *t_line_1,
+                Intersect2 { t_line_1, .. } => *t_line_1,
+                Intersect3 { t_line_1, .. } => *t_line_1,
+            }
+        }
+
+        #[inline]
+        pub fn get_line_t2(&self) -> Option<f64> {
+            use self::$structname::*;
+            match self {
+                Intersect1 { .. } => None,
+                Intersect2 { t_line_2, .. } => Some(*t_line_2),
+                Intersect3 { t_line_2, .. } => Some(*t_line_2),
+            }
+        }
+
+        #[inline]
+        pub fn get_line_t3(&self) -> Option<f64> {
+            use self::$structname::*;
+            match self {
+                Intersect1 { .. } => None,
+                Intersect2 { .. } => None,
+                Intersect3 { t_line_3, .. } => Some(*t_line_3),
+            }
+        }
+
+        #[inline]
+        pub fn get_intersection_point_1(&self) -> Point {
+            use self::$structname::*;
+            match self {
+                Intersect1 { line, t_line_1, .. } => lerp(line.0, line.1, *t_line_1),
+                Intersect2 { line, t_line_1, .. } => lerp(line.0, line.1, *t_line_1),
+                Intersect3 { line, t_line_1, .. } => lerp(line.0, line.1, *t_line_1),
+            }
+        }
+
+        #[inline]
+        pub fn get_intersection_point_2(&self) -> Option<Point> {
+            use self::$structname::*;
+            match self {
+                Intersect1 { .. } => None,
+                Intersect2 { line, t_line_2, .. } => Some(lerp(line.0, line.1, *t_line_2)),
+                Intersect3 { line, t_line_2, .. } => Some(lerp(line.0, line.1, *t_line_2)),
+            }
+        }
+
+        #[inline]
+        pub fn get_intersection_point_3(&self) -> Option<Point> {
+            use self::$structname::*;
+            match self {
+                Intersect1 { .. } => None,
+                Intersect2 { .. } => None,
+                Intersect3 { line, t_line_3, .. } => Some(lerp(line.0, line.1, *t_line_3)),
+            }
+        }
+    }
+)}
+
+cubic_line!(LineQuadIntersection, QuadraticCurve);
+cubic_line!(LineCubicIntersection, CubicCurve);
+
+macro_rules! cubic_cubic {($structname:ident, $curvetype:ident, $evaluate_fn:ident) => (
+    #[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
+    pub struct $structname {
+        pub t1: f64,
+        pub curve1: $curvetype,
+        pub t2: f64,
+        pub curve2: $curvetype,
+    }
+
+    impl $structname {
+        pub fn get_intersection_point_1(&self) -> Point {
+            $evaluate_fn(self.curve1, self.t1)
+        }
+
+        pub fn get_intersection_point_2(&self) -> Point {
+            $evaluate_fn(self.curve2, self.t2)
+        }
+    }
+)}
+
+cubic_line!(QuadLineIntersection, QuadraticCurve);
+cubic_cubic!(QuadQuadIntersection, QuadraticCurve, quadratic_evaluate);
+
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
+pub struct QuadCubicIntersection {
+    pub t1: f64,
+    pub curve1: QuadraticCurve,
+    pub t2: f64,
+    pub curve2: CubicCurve,
+}
+
+impl QuadCubicIntersection {
+    pub fn get_intersection_point_1(&self) -> Point {
+        quadratic_evaluate(self.curve1, self.t1)
+    }
+
+    pub fn get_intersection_point_2(&self) -> Point {
+        evaluate(self.curve2, self.t2)
     }
 }
 
-/// Calculates the normal vector at a certain point (perpendicular to the curve)
-pub fn cubic_bezier_normal(curve: CubicCurve, t: f64) -> BezierNormalVector {
+cubic_line!(CubicLineIntersection, CubicCurve);
 
-    // 1. Calculate the derivative of the bezier curve
-    //
-    // This means, we go from 4 control points to 3 control points and redistribute
-    // the weights of the control points according to the formula:
-    //
-    // w'0 = 3(w1-w0)
-    // w'1 = 3(w2-w1)
-    // w'2 = 3(w3-w2)
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd)]
+pub struct CubicQuadIntersection {
+    pub t1: f64,
+    pub curve1: CubicCurve,
+    pub t2: f64,
+    pub curve2: QuadraticCurve,
+}
 
-    let weight_1_x = 3.0 * (curve.1.x - curve.0.x);
-    let weight_1_y = 3.0 * (curve.1.y - curve.0.y);
+impl CubicQuadIntersection {
+    pub fn get_intersection_point_1(&self) -> Point {
+        evaluate(self.curve1, self.t1)
+    }
 
-    let weight_2_x = 3.0 * (curve.2.x - curve.1.x);
-    let weight_2_y = 3.0 * (curve.2.y - curve.1.y);
+    pub fn get_intersection_point_2(&self) -> Point {
+        quadratic_evaluate(self.curve2, self.t2)
+    }
+}
 
-    let weight_3_x = 3.0 * (curve.3.x - curve.2.x);
-    let weight_3_y = 3.0 * (curve.3.y - curve.2.y);
+cubic_cubic!(CubicCubicIntersection, CubicCurve, evaluate);
 
-    // The first derivative of a cubic bezier curve is a quadratic bezier curve
-    // Luckily, the first derivative is also the tangent vector. So all we need to do
-    // is to get the quadratic bezier
-    let mut tangent = quadratic_interpolate_bezier((
-        Point { x: weight_1_x, y: weight_1_y },
-        Point { x: weight_2_x, y: weight_2_y },
-        Point { x: weight_3_x, y: weight_3_y },
-    ), t);
+pub fn line_line_intersect(line1: Line, line2: Line) -> IntersectionResult {
+    use self::{Intersection::*, IntersectionResult::*};
 
-    // We normalize the tangent to have a lenght of 1
-    let tangent_length = (tangent.x.powi(2) + tangent.y.powi(2)).sqrt();
-    tangent.x /= tangent_length;
-    tangent.y /= tangent_length;
+    if line1 == line2 {
+        return Infinite(InfiniteIntersections::LineLine(line1, line2));
+    }
 
-    // The tangent is the vector that runs "along" the curve at a specific point.
-    // To get the normal (to calcuate the rotation of the characters), we need to
-    // rotate the tangent vector by 90 degrees.
-    //
-    // Rotating by 90 degrees is very simple, as we only need to flip the x and y axis
+    if line1.0 == line1.1 || line2.0 == line2.1 {
+        return NoIntersection;
+    }
 
-    BezierNormalVector {
-        x: -tangent.y,
-        y: tangent.x,
+    match do_line_line_intersect(line1, line2) {
+        None => NoIntersection,
+        Some(s) => FoundIntersection(LineLine(s)),
+    }
+}
+
+pub fn line_quad_intersect(line1: Line, curve1: QuadraticCurve) -> IntersectionResult {
+    use self::{Intersection::*, LineQuadIntersection::*, IntersectionResult::*};
+
+    if line1.0 == line1.1 || (curve1.0 == curve1.1 && curve1.1 == curve1.2) {
+        return NoIntersection;
+    }
+
+    match do_curve_line_intersect(quadratic_to_cubic_curve(curve1), line1) {
+        (Some((t_line_1, t_curve_1)), None, None) =>
+            FoundIntersection(LineQuad(Intersect1 {
+                curve: curve1,
+                line: line1,
+                t_curve_1,
+                t_line_1,
+            })),
+        (Some((t_line_1, t_curve_1)), Some((t_line_2, t_curve_2)), None) =>
+            FoundIntersection(LineQuad(Intersect2 {
+                curve: curve1,
+                line: line1,
+                t_curve_1,
+                t_line_1,
+                t_curve_2,
+                t_line_2,
+            })),
+        (Some((t_line_1, t_curve_1)), Some((t_line_2, t_curve_2)), Some((t_line_3, t_curve_3))) =>
+            FoundIntersection(LineQuad(Intersect3 {
+                curve: curve1,
+                line: line1,
+                t_curve_1,
+                t_line_1,
+                t_curve_2,
+                t_line_2,
+                t_curve_3,
+                t_line_3,
+            })),
+        _ => NoIntersection,
+    }
+}
+
+pub fn line_cubic_intersect(line1: Line, curve1: CubicCurve) -> IntersectionResult {
+    use self::{Intersection::*, LineCubicIntersection::*, IntersectionResult::*};
+
+    if line1.0 == line1.1 || (curve1.0 == curve1.1 && curve1.1 == curve1.2 && curve1.2 == curve1.3) {
+        return NoIntersection;
+    }
+
+    match do_curve_line_intersect(curve1, line1) {
+        (Some((t_line_1, t_curve_1)), None, None) =>
+            FoundIntersection(LineCubic(Intersect1 {
+                curve: curve1,
+                line: line1,
+                t_curve_1,
+                t_line_1,
+            })),
+        (Some((t_line_1, t_curve_1)), Some((t_line_2, t_curve_2)), None) =>
+            FoundIntersection(LineCubic(Intersect2 {
+                curve: curve1,
+                line: line1,
+                t_curve_1,
+                t_line_1,
+                t_curve_2,
+                t_line_2,
+            })),
+        (Some((t_line_1, t_curve_1)), Some((t_line_2, t_curve_2)), Some((t_line_3, t_curve_3))) =>
+            FoundIntersection(LineCubic(Intersect3 {
+                curve: curve1,
+                line: line1,
+                t_curve_1,
+                t_line_1,
+                t_curve_2,
+                t_line_2,
+                t_curve_3,
+                t_line_3,
+            })),
+        _ => NoIntersection,
+    }
+}
+
+pub fn quad_line_intersect(curve1: QuadraticCurve, line1: Line) -> IntersectionResult {
+    use self::{Intersection::*, QuadLineIntersection::*, IntersectionResult::*};
+
+    if line1.0 == line1.1 || (curve1.0 == curve1.1 && curve1.1 == curve1.2) {
+        return NoIntersection;
+    }
+
+    match do_curve_line_intersect(quadratic_to_cubic_curve(curve1), line1) {
+        (Some((t_line_1, t_curve_1)), None, None) =>
+            FoundIntersection(QuadLine(Intersect1 {
+                curve: curve1,
+                line: line1,
+                t_curve_1,
+                t_line_1,
+            })),
+        (Some((t_line_1, t_curve_1)), Some((t_line_2, t_curve_2)), None) =>
+            FoundIntersection(QuadLine(Intersect2 {
+                curve: curve1,
+                line: line1,
+                t_curve_1,
+                t_line_1,
+                t_curve_2,
+                t_line_2,
+            })),
+        (Some((t_line_1, t_curve_1)), Some((t_line_2, t_curve_2)), Some((t_line_3, t_curve_3))) =>
+            FoundIntersection(QuadLine(Intersect3 {
+                curve: curve1,
+                line: line1,
+                t_curve_1,
+                t_line_1,
+                t_curve_2,
+                t_line_2,
+                t_curve_3,
+                t_line_3,
+            })),
+        _ => NoIntersection,
+    }
+}
+
+pub fn quad_quad_intersect(curve1: QuadraticCurve, curve2:  QuadraticCurve) -> IntersectionResult {
+    use self::{Intersection::*, IntersectionResult::*};
+
+    if curve1 == curve2 {
+        return Infinite(InfiniteIntersections::QuadQuad(curve1, curve2));
+    }
+
+    if (curve1.0 == curve1.1 && curve1.1 == curve1.2) || (curve2.0 == curve2.1 && curve2.1 == curve2.2) {
+        return NoIntersection;
+    }
+
+    match do_curve_curve_intersect(quadratic_to_cubic_curve(curve1), quadratic_to_cubic_curve(curve2)) {
+        None => NoIntersection,
+        Some(s) => {
+            FoundIntersection(QuadQuad(s
+                .into_iter()
+                .map(|c| QuadQuadIntersection { curve1, curve2, t1: c.t1, t2: c.t2 })
+                .collect())
+            )
+        }
+    }
+}
+
+pub fn quad_cubic_intersect(curve1: QuadraticCurve, curve2: CubicCurve) -> IntersectionResult {
+    use self::{Intersection::*, IntersectionResult::*};
+
+    if (curve1.0 == curve1.1 && curve1.1 == curve1.2) || (curve2.0 == curve2.1 && curve2.1 == curve2.2 && curve2.2 == curve2.3) {
+        return NoIntersection;
+    }
+
+    let curve1_new = quadratic_to_cubic_curve(curve1);
+
+    if curve1_new == curve2 {
+        return Infinite(InfiniteIntersections::QuadCubic(curve1, curve2));
+    }
+
+    match do_curve_curve_intersect(curve1_new, curve2) {
+        None => NoIntersection,
+        Some(s) => {
+            FoundIntersection(QuadCubic(s
+                .into_iter()
+                .map(|c| QuadCubicIntersection { curve1, curve2, t1: c.t1, t2: c.t2 })
+                .collect())
+            )
+        }
+    }
+}
+
+pub fn cubic_line_intersect(curve1: CubicCurve, line1: Line) -> IntersectionResult {
+
+    use self::{Intersection::*, CubicLineIntersection::*, IntersectionResult::*};
+
+    if line1.0 == line1.1 || (curve1.0 == curve1.1 && curve1.1 == curve1.2 && curve1.2 == curve1.3) {
+        return NoIntersection;
+    }
+
+    match do_curve_line_intersect(curve1, line1) {
+        (Some((t_line_1, t_curve_1)), None, None) =>
+            FoundIntersection(CubicLine(Intersect1 {
+                curve: curve1,
+                line: line1,
+                t_curve_1,
+                t_line_1,
+            })),
+        (Some((t_line_1, t_curve_1)), Some((t_line_2, t_curve_2)), None) =>
+            FoundIntersection(CubicLine(Intersect2 {
+                curve: curve1,
+                line: line1,
+                t_curve_1,
+                t_line_1,
+                t_curve_2,
+                t_line_2,
+            })),
+        (Some((t_line_1, t_curve_1)), Some((t_line_2, t_curve_2)), Some((t_line_3, t_curve_3))) =>
+            FoundIntersection(CubicLine(Intersect3 {
+                curve: curve1,
+                line: line1,
+                t_curve_1,
+                t_line_1,
+                t_curve_2,
+                t_line_2,
+                t_curve_3,
+                t_line_3,
+            })),
+        _ => NoIntersection,
+    }
+}
+
+pub fn cubic_quad_intersect(curve1: CubicCurve, curve2: QuadraticCurve) -> IntersectionResult {
+    use self::{Intersection::*, IntersectionResult::*};
+
+    if (curve1.0 == curve1.1 && curve1.1 == curve1.2 && curve1.2 == curve1.3) || (curve2.0 == curve2.1 && curve2.1 == curve2.2) {
+        return NoIntersection;
+    }
+
+    let curve2_new = quadratic_to_cubic_curve(curve2);
+
+    if curve2_new == curve1 {
+        return Infinite(InfiniteIntersections::CubicQuad(curve1, curve2));
+    }
+
+    match do_curve_curve_intersect(curve1, curve2_new) {
+        None => NoIntersection,
+        Some(s) => {
+            FoundIntersection(CubicQuad(s
+                .into_iter()
+                .map(|c| CubicQuadIntersection { curve1, curve2, t1: c.t1, t2: c.t2 })
+                .collect())
+            )
+        }
+    }
+}
+
+pub fn cubic_cubic_intersect(curve1: CubicCurve, curve2: CubicCurve) -> IntersectionResult {
+    use self::{Intersection::*, IntersectionResult::*};
+
+    if curve1 == curve2 {
+        return Infinite(InfiniteIntersections::CubicCubic(curve1, curve2));
+    }
+
+    if (curve1.0 == curve1.1 && curve1.1 == curve1.2) || (curve2.0 == curve2.1 && curve2.1 == curve2.2) {
+        return NoIntersection;
+    }
+
+    match do_curve_curve_intersect(curve1, curve2) {
+        None => NoIntersection,
+        Some(s) => FoundIntersection(CubicCubic(s)),
     }
 }
 
 #[inline]
-pub fn quadratic_interpolate_bezier(curve: QuadraticCurve, t: f64) -> Point {
-    let one_minus = 1.0 - t;
-    let one_minus_square = one_minus.powi(2);
+pub fn split_line(line: Line, t: f64) -> (Line, Line) {
+    let t = t.max(0.0).min(1.0);
+    let split_point = lerp(line.0, line.1, t);
+    (
+        (line.0, split_point),
+        (split_point, line.1),
+    )
+}
 
-    let t_pow2 = t.powi(2);
+#[inline]
+pub fn split_quad(curve: QuadraticCurve, t: f64) -> (QuadraticCurve, QuadraticCurve) {
+    let t = t.max(0.0).min(1.0);
+    let p = quad_hull_points(curve, t);
+    ((p[0], p[3], p[5]), (p[5], p[4], p[2]))
+}
 
-    let x =         one_minus_square *             curve.0.x
-            + 2.0 * one_minus        * t         * curve.1.x
-            + 3.0                    * t_pow2    * curve.2.x;
+#[inline]
+pub fn split_cubic(curve: CubicCurve, t: f64) -> (CubicCurve, CubicCurve) {
+    let t = t.max(0.0).min(1.0);
+    subdivide(curve, t)
+}
 
-    let y =         one_minus_square *             curve.0.y
-            + 2.0 * one_minus        * t         * curve.1.y
-            + 3.0                    * t_pow2    * curve.2.y;
+//  Determines the intersection point of the line defined by points A and B with the
+//  line defined by points C and D.
+//
+//  Returns YES if the intersection point was found, and stores that point in X,Y.
+//  Returns NO if there is no determinable intersection point, in which case X,Y will
+//  be unmodified.
+#[inline]
+fn do_line_line_intersect(
+    (a, b): Line,
+    (c, d): Line,
+) -> Option<LineLineIntersection> {
 
-    Point { x, y }
+    let (original_a, original_b) = (a, b);
+    let (original_c, original_d) = (c, d);
+
+    //  (1) Translate the system so that point A is on the origin.
+    let b = Point::new(b.x - a.x, b.y - a.y);
+    let mut c = Point::new(c.x - a.x, c.y - a.y);
+    let mut d = Point::new(d.x - a.x, d.y - a.y);
+
+    // Get the length from a to b
+    let dist_ab = (b.x*b.x + b.y*b.y).sqrt();
+
+    // Rotate the system so that point B is on the positive X axis.
+    let cos_b = b.x / dist_ab;
+    let sin_b = b.y / dist_ab;
+
+    // Rotate c and d around b
+    let new_x = c.x * cos_b + c.y * sin_b;
+    c.y = c.y * cos_b - c.x * sin_b;
+    c.x = new_x;
+
+    let new_x = d.x * cos_b + d.y * sin_b;
+    d.y = d.y * cos_b - d.x * sin_b;
+    d.x = new_x;
+
+    // Fail if the lines are parallel
+    if c.y == d.y {
+        return None;
+    }
+
+    // Calculate the position of the intersection point along line A-B.
+    let t = d.x + (c.x - d.x) * d.y / (d.y - c.y);
+
+    let new_x = original_a.x + t * cos_b;
+    let new_y = original_a.y + t * sin_b;
+
+    // The t projected onto the line a - b
+    let t1 = (
+        ((new_x - original_a.x) / (original_b.x - original_a.x)) +
+        ((new_y - original_a.y) / (original_b.y - original_a.y))
+    ) / 2.0;
+
+    // The t projected onto the line b - c
+    let t2 = (
+        ((new_x - original_c.x) / (original_d.x - original_c.x)) +
+        ((new_y - original_c.y) / (original_d.y - original_c.y))
+    ) / 2.0;
+
+    Some(LineLineIntersection {
+        t1,
+        line1: (original_a, original_b),
+        t2,
+        line2: (original_c, original_d),
+    })
 }
 
 /// Intersect a cubic curve with a line.
 ///
 /// Based on http://www.particleincell.com/blog/2013/cubic-line-intersection/
 // https://jsbin.com/nawoxemopa/1/edit?js,console
-pub fn curve_line_intersect(
+#[inline]
+fn do_curve_line_intersect(
     (a1, a2, a3, a4): CubicCurve,
     (b1, b2): Line,
-) -> IntersectionResult {
-
-    use self::{
-        IntersectionResult::*,
-        CubicLineIntersection::*,
-        Intersection::*,
-    };
-
-    if b1 == b2 || (a1 == a2 && a2 == a3 && a3 == a4) {
-        return NoIntersection;
-    }
-
-    let original_a1 = a1;
-    let original_a2 = a2;
-    let original_a3 = a3;
-    let original_a4 = a4;
-    let original_b1 = b1;
-    let original_b2 = b2;
+) -> OptionTuple<(f64, f64)> {
 
     // If the numbers are below 10.0, the algorithm has
     // problems with precision, multiply by 100
@@ -322,36 +690,128 @@ pub fn curve_line_intersect(
     unroll_loop!(1);
     unroll_loop!(2);
 
-    match intersections {
-        (Some((t_line_1, t_curve_1)), None, None) =>
-            FoundIntersection(CubicLine(Intersect1 {
-                curve: (original_a1, original_a2, original_a3, original_a4),
-                line: (original_b1, original_b2),
-                t_curve_1,
-                t_line_1,
-            })),
-        (Some((t_line_1, t_curve_1)), Some((t_line_2, t_curve_2)), None) =>
-            FoundIntersection(CubicLine(Intersect2 {
-                curve: (original_a1, original_a2, original_a3, original_a4),
-                line: (original_b1, original_b2),
-                t_curve_1,
-                t_line_1,
-                t_curve_2,
-                t_line_2,
-            })),
-        (Some((t_line_1, t_curve_1)), Some((t_line_2, t_curve_2)), Some((t_line_3, t_curve_3))) =>
-            FoundIntersection(CubicLine(Intersect3 {
-                curve: (original_a1, original_a2, original_a3, original_a4),
-                line: (original_b1, original_b2),
-                t_curve_1,
-                t_line_1,
-                t_curve_2,
-                t_line_2,
-                t_curve_3,
-                t_line_3,
-            })),
-        _ => NoIntersection,
+    intersections
+}
+
+// Intersect a quadratic with another quadratic curve
+fn do_curve_curve_intersect(a: CubicCurve, b: CubicCurve) -> Option<Vec<CubicCubicIntersection>> {
+
+    let intersections = curve_intersections_inner(a, b, 0.0, 1.0, 0.0, 1.0, 1.0, false, 0, 32, 0.8);
+
+    if intersections.is_empty() {
+        None
+    } else {
+        Some(intersections)
     }
+}
+
+
+
+// --- helper functions
+
+
+// Generates all hull points, at all iterations, for an on-curve point
+// at the specified t-value. This generates a point[6], where the first iteration is
+// [0,1,2], the second iteration is [3,4], the third iteration is [5]
+// (the on-curve point)
+#[inline(always)]
+fn quad_hull_points(curve: QuadraticCurve, t: f64) -> [Point;6] {
+    let (p0, p1, p2) = curve;
+
+    // 2nd iteration
+    let p3 = lerp(p0, p1, t);
+    let p4 = lerp(p1, p2, t);
+
+    // 3rd iteration
+    let p5 = lerp(p3, p4, t);
+
+    [p0, p1, p2, p3, p4, p5]
+}
+
+/// Calculates the normal vector at a certain point (perpendicular to the curve)
+#[inline]
+pub fn cubic_bezier_normal(curve: CubicCurve, t: f64) -> BezierNormalVector {
+
+    // 1. Calculate the derivative of the bezier curve
+    //
+    // This means, we go from 4 control points to 3 control points and redistribute
+    // the weights of the control points according to the formula:
+    //
+    // w'0 = 3(w1-w0)
+    // w'1 = 3(w2-w1)
+    // w'2 = 3(w3-w2)
+
+    let weight_1_x = 3.0 * (curve.1.x - curve.0.x);
+    let weight_1_y = 3.0 * (curve.1.y - curve.0.y);
+
+    let weight_2_x = 3.0 * (curve.2.x - curve.1.x);
+    let weight_2_y = 3.0 * (curve.2.y - curve.1.y);
+
+    let weight_3_x = 3.0 * (curve.3.x - curve.2.x);
+    let weight_3_y = 3.0 * (curve.3.y - curve.2.y);
+
+    // The first derivative of a cubic bezier curve is a quadratic bezier curve
+    // Luckily, the first derivative is also the tangent vector. So all we need to do
+    // is to get the quadratic bezier
+    let mut tangent = quadratic_evaluate((
+        Point { x: weight_1_x, y: weight_1_y },
+        Point { x: weight_2_x, y: weight_2_y },
+        Point { x: weight_3_x, y: weight_3_y },
+    ), t);
+
+    // We normalize the tangent to have a lenght of 1
+    let tangent_length = (tangent.x.powi(2) + tangent.y.powi(2)).sqrt();
+    tangent.x /= tangent_length;
+    tangent.y /= tangent_length;
+
+    // The tangent is the vector that runs "along" the curve at a specific point.
+    // To get the normal (to calcuate the rotation of the characters), we need to
+    // rotate the tangent vector by 90 degrees.
+    //
+    // Rotating by 90 degrees is very simple, as we only need to flip the x and y axis
+
+    BezierNormalVector {
+        x: -tangent.y,
+        y: tangent.x,
+    }
+}
+
+/// Calculates the normal vector at a certain point (perpendicular to the curve)
+#[inline]
+pub fn quadratic_bezier_normal(curve: QuadraticCurve, t: f64) -> BezierNormalVector {
+    cubic_bezier_normal(quadratic_to_cubic_curve(curve), t)
+}
+
+/// Calculates the normal vector at a certain point (perpendicular to the curve)
+#[inline]
+pub fn line_normal(line: Line, _t: f64) -> BezierNormalVector {
+    // calculate the rise / run, then simply
+    // inverse the axis to rotate by 90 degrees
+    let diff_x = line.1.x - line.0.x;
+    let diff_y = line.1.y - line.0.y;
+    let line_length = (diff_x.powi(2) + diff_y.powi(2)).sqrt();
+    BezierNormalVector {
+        x: -diff_y / line_length,
+        y: diff_x / line_length,
+    }
+}
+
+#[inline]
+fn quadratic_evaluate(curve: QuadraticCurve, t: f64) -> Point {
+    let one_minus = 1.0 - t;
+    let one_minus_square = one_minus.powi(2);
+
+    let t_pow2 = t.powi(2);
+
+    let x =         one_minus_square *             curve.0.x
+            + 2.0 * one_minus        * t         * curve.1.x
+            + 3.0                    * t_pow2    * curve.2.x;
+
+    let y =         one_minus_square *             curve.0.y
+            + 2.0 * one_minus        * t         * curve.1.y
+            + 3.0                    * t_pow2    * curve.2.y;
+
+    Point { x, y }
 }
 
 // based on http://mysite.verizon.net/res148h4j/javascript/script_exact_cubic.html#the%20source%20code
@@ -473,11 +933,9 @@ fn bezier_coeffs(a: f64, b: f64, c: f64, d: f64) -> (f64, f64, f64, f64) {
     )
 }
 
-type OptionTuple = (Option<f64>, Option<f64>, Option<f64>);
-
 // Sort so that the None values are at the end
 #[inline]
-fn sort_special(a: OptionTuple) -> OptionTuple {
+fn sort_special(a: OptionTuple<f64>) -> OptionTuple<f64> {
     match a {
         (None, None, None) => (None, None, None),
         (Some(a), None, None) |
@@ -495,88 +953,9 @@ fn sort_special(a: OptionTuple) -> OptionTuple {
     }
 }
 
-
-//  Determines the intersection point of the line defined by points A and B with the
-//  line defined by points C and D.
-//
-//  Returns YES if the intersection point was found, and stores that point in X,Y.
-//  Returns NO if there is no determinable intersection point, in which case X,Y will
-//  be unmodified.
-#[inline]
-pub fn line_line_intersect(
-    (a, b): Line,
-    (c, d): Line,
-) -> IntersectionResult {
-
-    use self::{InfiniteIntersections::*, IntersectionResult::*};
-
-    if (a, b) == (c, d) {
-        return Infinite(LineLine((a, b), (c, d)));
-    }
-
-    // Check if both points of the line are the same
-    if a == b || c == d {
-        return NoIntersection;
-    }
-
-    let (original_a, original_b) = (a, b);
-    let (original_c, original_d) = (c, d);
-
-    //  (1) Translate the system so that point A is on the origin.
-    let b = Point::new(b.x - a.x, b.y - a.y);
-    let mut c = Point::new(c.x - a.x, c.y - a.y);
-    let mut d = Point::new(d.x - a.x, d.y - a.y);
-
-    // Get the length from a to b
-    let dist_ab = (b.x*b.x + b.y*b.y).sqrt();
-
-    // Rotate the system so that point B is on the positive X axis.
-    let cos_b = b.x / dist_ab;
-    let sin_b = b.y / dist_ab;
-
-    // Rotate c and d around b
-    let new_x = c.x * cos_b + c.y * sin_b;
-    c.y = c.y * cos_b - c.x * sin_b;
-    c.x = new_x;
-
-    let new_x = d.x * cos_b + d.y * sin_b;
-    d.y = d.y * cos_b - d.x * sin_b;
-    d.x = new_x;
-
-    // Fail if the lines are parallel
-    if c.y == d.y {
-        return NoIntersection;
-    }
-
-    // Calculate the position of the intersection point along line A-B.
-    let t = d.x + (c.x - d.x) * d.y / (d.y - c.y);
-
-    let new_x = original_a.x + t * cos_b;
-    let new_y = original_a.y + t * sin_b;
-
-    // The t projected onto the line a - b
-    let t1 = (
-        ((new_x - original_a.x) / (original_b.x - original_a.x)) +
-        ((new_y - original_a.y) / (original_b.y - original_a.y))
-    ) / 2.0;
-
-    // The t projected onto the line b - c
-    let t2 = (
-        ((new_x - original_c.x) / (original_d.x - original_c.x)) +
-        ((new_y - original_c.y) / (original_d.y - original_c.y))
-    ) / 2.0;
-
-    FoundIntersection(Intersection::LineLine(LineLineIntersection {
-        t1,
-        line1: (original_a, original_b),
-        t2,
-        line2: (original_c, original_d),
-    }))
-}
-
 // Convert a quadratic bezier into a cubic bezier
 #[inline]
-pub fn quadratic_to_cubic_curve(c: QuadraticCurve) -> CubicCurve {
+fn quadratic_to_cubic_curve(c: QuadraticCurve) -> CubicCurve {
     const TWO_THIRDS: f64 = 2.0 / 3.0;
 
     let c1_x = c.0.x + TWO_THIRDS * (c.1.x - c.0.x);
@@ -934,4 +1313,11 @@ fn curve_intersections_inner(
         // Recurse
         curve_intersections_inner(v2, v1, uMin, uMax, tMinNew, tMaxNew, tDiff, !reverse, recursion + 1, recursionLimit, tLimit)
     }
+}
+
+#[inline(always)]
+fn lerp(p1: Point, p2: Point, t: f64) -> Point {
+    let new_x = (1.0 - t) * p1.x + t * p2.x;
+    let new_y = (1.0 - t) * p1.y + t * p2.y;
+    Point::new(new_x, new_y)
 }
