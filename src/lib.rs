@@ -44,6 +44,8 @@
 extern crate quadtree_f32;
 #[cfg(feature = "parallel")]
 extern crate rayon;
+#[cfg(feature = "serialization")]
+extern crate serde;
 
 use std::{
     fmt,
@@ -54,6 +56,8 @@ use std::{
 use quadtree_f32::{Rect, QuadTree, ItemId, Item};
 #[cfg(feature = "parallel")]
 use rayon::iter::{ParallelIterator, IndexedParallelIterator, IntoParallelRefIterator};
+#[cfg(feature = "serialization")]
+use serde::{ser::{Serialize, Serializer}, de::{Deserialize, Deserializer}};
 
 mod intersection;
 
@@ -365,6 +369,18 @@ pub enum ParseErrorWithContext {
     FailedToParseItem(ParseError, usize),
 }
 
+impl fmt::Display for ParseErrorWithContext {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use self::ParseErrorWithContext::*;
+        match self {
+            BrokenBezierCurve(i) => write!(f, "beziercurve is broken at index {} - the last point of a segment has to be the first point of the next segment", i),
+            NoEnclosingBezierCurve => write!(f, "formatting error: no enclusing BEZIERCURVE() braces found"),
+            FailedToParseItem(p, i) => write!(f, "failed to parse item at index {}: {}", i, p),
+        }
+    }
+}
+
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParseError {
     TooManyPoints,
@@ -373,6 +389,20 @@ pub enum ParseError {
     InternalBracesDetected,
     FailedToParsePoint(String),
     F32ParseError(ParseFloatError),
+}
+
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use self::ParseError::*;
+        match self {
+            TooManyPoints => write!(f, "too many points in item (maximum 4 points for cubic bezier curve)"),
+            TooFewPoints => write!(f, "too few points in item (minimum 2 points for line)"),
+            NoEnclosingBraces => write!(f, "no braces around point found"),
+            InternalBracesDetected => write!(f, "internal brace error"),
+            FailedToParsePoint(e) => write!(f, "failed to parse point: {}", e),
+            F32ParseError(e) => write!(f, "error parsing floating-point number: {}", e),
+        }
+    }
 }
 
 impl From<ParseFloatError> for ParseError {
@@ -392,6 +422,43 @@ pub enum BezierCommand {
 #[derive(Debug, Clone, PartialEq, PartialOrd)]
 pub struct BezierCurve {
     pub items: Vec<BezierCurveItem>,
+}
+
+#[cfg(feature = "serialization")]
+impl Serialize for BezierCurve where {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+        serializer.serialize_str(&format!("{}", self))
+    }
+}
+
+#[cfg(feature = "serialization")]
+mod bezier_curve_visitor {
+    use serde::de::{self, Visitor};
+    use std::fmt;
+    use super::BezierCurve;
+
+    pub(in super) struct BezierCurveVisitor;
+
+    impl<'de> Visitor<'de> for BezierCurveVisitor {
+        type Value = BezierCurve;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("a BEZIERCURVE() string")
+        }
+
+        fn visit_str<E>(self, s: &str) -> Result<Self::Value, E> where E: de::Error {
+            BezierCurve::from_str(s).map_err(de::Error::custom)
+        }
+    }
+}
+
+#[cfg(feature = "serialization")]
+impl<'de> Deserialize<'de> for BezierCurve {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
+        use bezier_curve_visitor::BezierCurveVisitor;
+        let s = deserializer.deserialize_str(BezierCurveVisitor)?;
+        Ok(s)
+    }
 }
 
 impl fmt::Display for BezierCurve {
