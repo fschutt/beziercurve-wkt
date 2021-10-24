@@ -1,6 +1,6 @@
 [package]
 name = "beziercurve-wkt"
-version = "0.1.2"
+version = "0.1.3"
 authors = ["Felix Schütt <felix.schuett@maps4print.com>"]
 edition = "2018"
 repository = "https://github.com/fschutt/beziercurve-wkt"

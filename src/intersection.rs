@@ -257,7 +257,7 @@ impl CubicQuadIntersection {
 
 cubic_cubic!(CubicCubicIntersection, CubicCurve, evaluate);
 
-pub fn line_line_intersect(line1: Line, line2: Line) -> IntersectionResult {
+pub(crate) fn line_line_intersect(line1: Line, line2: Line) -> IntersectionResult {
     use self::{Intersection::*, IntersectionResult::*};
 
     if line1 == line2 {
@@ -274,7 +274,7 @@ pub fn line_line_intersect(line1: Line, line2: Line) -> IntersectionResult {
     }
 }
 
-pub fn line_quad_intersect(line1: Line, curve1: QuadraticCurve) -> IntersectionResult {
+pub(crate) fn line_quad_intersect(line1: Line, curve1: QuadraticCurve) -> IntersectionResult {
     use self::{Intersection::*, LineQuadIntersection::*, IntersectionResult::*};
 
     if line1.0 == line1.1 || (curve1.0 == curve1.1 && curve1.1 == curve1.2) {
@@ -313,7 +313,7 @@ pub fn line_quad_intersect(line1: Line, curve1: QuadraticCurve) -> IntersectionR
     }
 }
 
-pub fn line_cubic_intersect(line1: Line, curve1: CubicCurve) -> IntersectionResult {
+pub(crate) fn line_cubic_intersect(line1: Line, curve1: CubicCurve) -> IntersectionResult {
     use self::{Intersection::*, LineCubicIntersection::*, IntersectionResult::*};
 
     if line1.0 == line1.1 || (curve1.0 == curve1.1 && curve1.1 == curve1.2 && curve1.2 == curve1.3) {
@@ -352,7 +352,7 @@ pub fn line_cubic_intersect(line1: Line, curve1: CubicCurve) -> IntersectionResu
     }
 }
 
-pub fn quad_line_intersect(curve1: QuadraticCurve, line1: Line) -> IntersectionResult {
+pub(crate) fn quad_line_intersect(curve1: QuadraticCurve, line1: Line) -> IntersectionResult {
     use self::{Intersection::*, QuadLineIntersection::*, IntersectionResult::*};
 
     if line1.0 == line1.1 || (curve1.0 == curve1.1 && curve1.1 == curve1.2) {
@@ -391,7 +391,7 @@ pub fn quad_line_intersect(curve1: QuadraticCurve, line1: Line) -> IntersectionR
     }
 }
 
-pub fn quad_quad_intersect(curve1: QuadraticCurve, curve2:  QuadraticCurve) -> IntersectionResult {
+pub(crate) fn quad_quad_intersect(curve1: QuadraticCurve, curve2:  QuadraticCurve) -> IntersectionResult {
     use self::{Intersection::*, IntersectionResult::*};
 
     if curve1 == curve2 {
@@ -414,7 +414,7 @@ pub fn quad_quad_intersect(curve1: QuadraticCurve, curve2:  QuadraticCurve) -> I
     }
 }
 
-pub fn quad_cubic_intersect(curve1: QuadraticCurve, curve2: CubicCurve) -> IntersectionResult {
+pub(crate) fn quad_cubic_intersect(curve1: QuadraticCurve, curve2: CubicCurve) -> IntersectionResult {
     use self::{Intersection::*, IntersectionResult::*};
 
     if (curve1.0 == curve1.1 && curve1.1 == curve1.2) || (curve2.0 == curve2.1 && curve2.1 == curve2.2 && curve2.2 == curve2.3) {
@@ -439,7 +439,7 @@ pub fn quad_cubic_intersect(curve1: QuadraticCurve, curve2: CubicCurve) -> Inter
     }
 }
 
-pub fn cubic_line_intersect(curve1: CubicCurve, line1: Line) -> IntersectionResult {
+pub(crate) fn cubic_line_intersect(curve1: CubicCurve, line1: Line) -> IntersectionResult {
 
     use self::{Intersection::*, CubicLineIntersection::*, IntersectionResult::*};
 
@@ -479,7 +479,7 @@ pub fn cubic_line_intersect(curve1: CubicCurve, line1: Line) -> IntersectionResu
     }
 }
 
-pub fn cubic_quad_intersect(curve1: CubicCurve, curve2: QuadraticCurve) -> IntersectionResult {
+pub(crate) fn cubic_quad_intersect(curve1: CubicCurve, curve2: QuadraticCurve) -> IntersectionResult {
     use self::{Intersection::*, IntersectionResult::*};
 
     if (curve1.0 == curve1.1 && curve1.1 == curve1.2 && curve1.2 == curve1.3) || (curve2.0 == curve2.1 && curve2.1 == curve2.2) {
@@ -504,7 +504,7 @@ pub fn cubic_quad_intersect(curve1: CubicCurve, curve2: QuadraticCurve) -> Inter
     }
 }
 
-pub fn cubic_cubic_intersect(curve1: CubicCurve, curve2: CubicCurve) -> IntersectionResult {
+pub(crate) fn cubic_cubic_intersect(curve1: CubicCurve, curve2: CubicCurve) -> IntersectionResult {
     use self::{Intersection::*, IntersectionResult::*};
 
     if curve1 == curve2 {
@@ -522,7 +522,7 @@ pub fn cubic_cubic_intersect(curve1: CubicCurve, curve2: CubicCurve) -> Intersec
 }
 
 #[inline]
-pub fn split_line(line: Line, t: f64) -> (Line, Line) {
+pub(crate) fn split_line(line: Line, t: f64) -> (Line, Line) {
     let t = t.max(0.0).min(1.0);
     let split_point = lerp(line.0, line.1, t);
     (
@@ -532,14 +532,14 @@ pub fn split_line(line: Line, t: f64) -> (Line, Line) {
 }
 
 #[inline]
-pub fn split_quad(curve: QuadraticCurve, t: f64) -> (QuadraticCurve, QuadraticCurve) {
+pub(crate) fn split_quad(curve: QuadraticCurve, t: f64) -> (QuadraticCurve, QuadraticCurve) {
     let t = t.max(0.0).min(1.0);
     let p = quad_hull_points(curve, t);
     ((p[0], p[3], p[5]), (p[5], p[4], p[2]))
 }
 
 #[inline]
-pub fn split_cubic(curve: CubicCurve, t: f64) -> (CubicCurve, CubicCurve) {
+pub(crate) fn split_cubic(curve: CubicCurve, t: f64) -> (CubicCurve, CubicCurve) {
     let t = t.max(0.0).min(1.0);
     subdivide(curve, t)
 }
@@ -730,7 +730,7 @@ fn quad_hull_points(curve: QuadraticCurve, t: f64) -> [Point;6] {
 
 /// Calculates the normal vector at a certain point (perpendicular to the curve)
 #[inline]
-pub fn cubic_bezier_normal(curve: CubicCurve, t: f64) -> BezierNormalVector {
+pub(crate) fn cubic_bezier_normal(curve: CubicCurve, t: f64) -> BezierNormalVector {
 
     // 1. Calculate the derivative of the bezier curve
     //
@@ -778,13 +778,13 @@ pub fn cubic_bezier_normal(curve: CubicCurve, t: f64) -> BezierNormalVector {
 
 /// Calculates the normal vector at a certain point (perpendicular to the curve)
 #[inline]
-pub fn quadratic_bezier_normal(curve: QuadraticCurve, t: f64) -> BezierNormalVector {
+pub(crate) fn quadratic_bezier_normal(curve: QuadraticCurve, t: f64) -> BezierNormalVector {
     cubic_bezier_normal(quadratic_to_cubic_curve(curve), t)
 }
 
 /// Calculates the normal vector at a certain point (perpendicular to the curve)
 #[inline]
-pub fn line_normal(line: Line, _t: f64) -> BezierNormalVector {
+pub(crate) fn line_normal(line: Line, _t: f64) -> BezierNormalVector {
     // calculate the rise / run, then simply
     // inverse the axis to rotate by 90 degrees
     let diff_x = line.1.x - line.0.x;

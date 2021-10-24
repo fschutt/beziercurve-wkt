@@ -61,9 +61,7 @@ use serde::{ser::{Serialize, Serializer}, de::{Deserialize, Deserializer}};
 
 mod intersection;
 
-pub use intersection::{IntersectionResult, Intersection, InfiniteIntersections};
-pub use intersection::BezierNormalVector;
-
+pub use intersection::*;
 pub type Line           = (Point, Point);
 pub type QuadraticCurve = (Point, Point, Point);
 pub type CubicCurve     = (Point, Point, Point, Point);
